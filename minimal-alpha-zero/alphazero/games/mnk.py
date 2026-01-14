@@ -292,10 +292,10 @@ class MnkNetwork(Network):
         self.best_model = MnkModel(m, n, config.rngs)
         self.config = config
 
-    def best_model_predict_single(self, input_data: MnkInputData) -> tuple[dict[MnkAction, float], float]:
+    def best_model_predict(self, input_data_list: list[MnkInputData]) -> list[tuple[dict[MnkAction, float], float]]:
         """ """
         self.best_model.eval()  # Switch to eval mode
-        return _model_predict_single(self.best_model, input_data)
+        return _model_predict(self.best_model, input_data_list)
 
     def train_and_evaluate(self, replay_buffer: ReplayBuffer, game: MnkGame):
         """ """
@@ -368,7 +368,7 @@ def evaluate(model1: MnkModel, model2: MnkModel, game: MnkGame, competitions_num
             i += 1
             is_model1 = i % 2 == 0
             model = model1 if is_model1 else model2
-            prior_probabilities, _ = _model_predict_single(model, state.make_input_data())
+            prior_probabilities, _ = _model_predict(model, [state.make_input_data()])[0]
             # TODO: Tune the temperature.
             legal_actions, legal_prior_probabilities = calculate_legal_actions(prior_probabilities, game, state)
             # TODO: Use a stochastic approach rather than deterministically selecting the move with the maximum probability.
@@ -393,17 +393,20 @@ def evaluate(model1: MnkModel, model2: MnkModel, game: MnkGame, competitions_num
     return result
 
 
-def _model_predict_single(model: MnkModel, input_data: MnkInputData) -> tuple[dict[MnkAction, float], float]:
+def _model_predict(model: MnkModel, input_data_list: list[MnkInputData]) -> list[tuple[dict[MnkAction, float], float]]:
     """ """
-    x = jnp.array(input_data.board_data)
-    m, n = x.shape  # Fortunately, the action space has the same total size as the input data shape
-    x = x.reshape((1, *x.shape, MnkModel.INPUT_CHANNEL))
+    x = jnp.array([d.board_data for d in input_data_list])
+    batch_size, m, n = x.shape  # Fortunately, the action space has the same total size as the input data shape
+    x = x.reshape((batch_size, m, n, MnkModel.INPUT_CHANNEL))
     prior_probabilities_output, value_output = model(x)
-    prior_probabilities: dict[MnkAction, float] = {}
-    for y in range(m):
-        for x in range(n):
-            # Uses the same layout as `MnkGame.list_all_actions` method to ensure the same action order.
-            # Please refer to `Model.__call__` method for details.
-            prior_probabilities[MnkAction(x, y)] = prior_probabilities_output[0][y * n + x].item()
-    value: float = value_output.item()
-    return prior_probabilities, value
+    predictions: list[tuple[dict[MnkAction, float], float]] = []
+    for i in range(batch_size):
+        prior_probabilities: dict[MnkAction, float] = {}
+        for y in range(m):
+            for x in range(n):
+                # Uses the same layout as `MnkGame.list_all_actions` method to ensure the same action order.
+                # Please refer to `Model.__call__` method for details.
+                prior_probabilities[MnkAction(x, y)] = prior_probabilities_output[i][y * n + x].item()
+        value: float = value_output[i].item()
+        predictions.append((prior_probabilities, value))
+    return predictions

@@ -34,7 +34,12 @@ def main():
     ITERATIONS_NUM = 100
     for i in range(ITERATIONS_NUM):
         logger.info(f"iteration_index={i}")
-        for data in generate_data(mnk_game, mnk_network, self_plays_num=16, self_play_select_simulations_num=m * n * 2):
+        for data in generate_data(
+            mnk_game,
+            mnk_network,
+            self_play_games_num=16,
+            self_play_select_simulations_num=m * n * 2,
+        ):
             replay_buffer.append(data)
         logger.info(f"replay_buffer_len={len(replay_buffer.buffer)}")
         mnk_network.train_and_evaluate(replay_buffer, mnk_game)

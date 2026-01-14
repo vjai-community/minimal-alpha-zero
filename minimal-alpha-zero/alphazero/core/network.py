@@ -24,7 +24,7 @@ class Network(ABC):
     """ """
 
     @abstractmethod
-    def best_model_predict_single(self, input_data: InputData) -> tuple[dict[Action, float], float]:
+    def best_model_predict(self, input_data_list: list[InputData]) -> list[tuple[dict[Action, float], float]]:
         """
         Predict policy (prior probabilities for all actions, including illegal ones) and value of a given state.
         The value will then be trained to be close to 1 if the current player is predicted to win,
