@@ -7,7 +7,7 @@ import math
 import random
 from typing import Iterable, Optional
 
-from .game import Action, State, Game, calculate_legal_actions
+from .game import Action, State, Game
 from .network import Model
 
 
@@ -229,12 +229,12 @@ def _expand(node: Node, game: Game, model: Model):
     # TODO: Confirm which value should be used for a terminal state: value predicted by the model or final reward from gameplay.
     prior_probabilities, value = model.predict_single(node.state.make_input_data())
     # The prior may contain non-zero probabilities for illegal actions. We need to eliminate those and keep only the legal ones.
-    # TODO: Confirm whether the prior probabilities for legal actions should be recalculated after eliminating illegal ones.
-    legal_actions, legal_prior_probabilities = calculate_legal_actions(prior_probabilities, game, node.state)
+    legal_actions = game.list_legal_actions(node.state)
+    legal_prior_probabilities = {a: p for a, p in prior_probabilities.items() if a in legal_actions}
     # Create new edges that include prior probabilities only for legal actions.
     for action in legal_actions:
         state = game.simulate(node.state, action)
-        node.children[action] = Edge(Node(state), legal_prior_probabilities[legal_actions.index(action)])
+        node.children[action] = Edge(Node(state), legal_prior_probabilities[action])
     node.value = value
 
 
