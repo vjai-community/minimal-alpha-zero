@@ -64,9 +64,9 @@ class TestMnk:
             select_temperature=0.1,
         )
         mnk_network = MnkNetwork(m, n, mnk_config)
-        candidate_model = nnx.clone(mnk_network.best_model)
+        candidate_model = nnx.clone(mnk_network.get_best_model())
         result = evaluate(
-            mnk_network.best_model,
+            mnk_network.get_best_model(),
             candidate_model,
             mnk_game,
             mnk_config.competitions_num,
