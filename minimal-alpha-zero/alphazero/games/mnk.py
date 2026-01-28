@@ -265,16 +265,16 @@ class MnkModel(nnx.Module, NamedModel):
         self.linear = nnx.Linear(16 * m * n, 128, rngs=rngs)
         self.dropout1 = nnx.Dropout(rate=0.025, rngs=rngs)
         # Heads
-        self.prior_probabilities_head = nnx.Linear(128, m * n, rngs=rngs)
+        self.prior_probs_head = nnx.Linear(128, m * n, rngs=rngs)
         self.value_head = nnx.Linear(128, 1, rngs=rngs)
 
     def __call__(self, x: Array) -> tuple[Array, Array]:
         x = self.dropout0(nnx.relu(self.batch_norm(self.conv(x))))
         x = x.reshape(x.shape[0], -1)  # Flatten
         x = self.dropout1(nnx.relu(self.linear(x)))
-        prior_probabilities_output = self.prior_probabilities_head(x)  # Raw logits
+        prior_probs_output = self.prior_probs_head(x)  # Raw logits
         value_output = nnx.tanh(self.value_head(x)).squeeze(-1)
-        return prior_probabilities_output, value_output
+        return prior_probs_output, value_output
 
     def predict_single(self, input_data: MnkInputData) -> tuple[dict[MnkAction, float], float]:
         """ """
@@ -282,16 +282,16 @@ class MnkModel(nnx.Module, NamedModel):
         x = jnp.array(input_data.board_data)
         n, m = x.shape  # Fortunately, the action space has the same total size as the input data shape
         x = x.reshape((1, *x.shape, MnkModel.INPUT_CHANNEL))
-        prior_probabilities_output, value_output = self(x)
-        prior_probabilities: dict[MnkAction, float] = {}
-        prior_probabilities_output = nn.softmax(prior_probabilities_output[0])
+        prior_probs_output, value_output = self(x)
+        prior_probs: dict[MnkAction, float] = {}
+        prior_probs_output = nn.softmax(prior_probs_output[0])
         for y in range(n):
             for x in range(m):
                 # Use the same layout as `MnkGame.list_all_actions` method to ensure the same action order.
                 # Please refer to `..core.network.Model` class for details.
-                prior_probabilities[MnkAction(x, y)] = prior_probabilities_output[y * m + x].item()
+                prior_probs[MnkAction(x, y)] = prior_probs_output[y * m + x].item()
         value: float = value_output.item()
-        return prior_probabilities, value
+        return prior_probs, value
 
 
 class DummyModel(NamedModel):
@@ -308,9 +308,9 @@ class DummyModel(NamedModel):
     def predict_single(self, input_data: MnkInputData) -> tuple[dict[MnkAction, float], float]:
         """ """
         m, n = self.m, self.n
-        prior_probabilities = {MnkAction(x, y): 1.0 / (m * n) for y in range(n) for x in range(m)}
+        prior_probs = {MnkAction(x, y): 1.0 / (m * n) for y in range(n) for x in range(m)}
         value = 0.0
-        return prior_probabilities, value
+        return prior_probs, value
 
 
 class MnkConfig:
@@ -436,12 +436,12 @@ class MnkNetwork(Network):
 
         def _loss_fn(model: MnkModel, data_batch: tuple[Array, Array, Array]) -> tuple[float, tuple[Array, Array]]:
             # l = (z-v)^2 - π*log(p)
-            boards, improved_probabilities, winners = data_batch
-            prior_probabilities_logits, values = model(boards)
+            boards, improved_probs, winners = data_batch
+            prior_prob_logits, values = model(boards)
             value_loss = optax.l2_loss(values, winners).mean()  # MSE
-            probabilities_loss = optax.softmax_cross_entropy(prior_probabilities_logits, improved_probabilities).mean()
-            loss = value_loss + probabilities_loss
-            return loss, (prior_probabilities_logits, winners)
+            probs_loss = optax.softmax_cross_entropy(prior_prob_logits, improved_probs).mean()
+            loss = value_loss + probs_loss
+            return loss, (prior_prob_logits, winners)
 
         metric = nnx.MultiMetric(loss=nnx.metrics.Average("loss"))
         metric_record: dict[str, float] = {}
@@ -454,9 +454,9 @@ class MnkNetwork(Network):
         for data_batch in [train_data_list[i : i + batch_size] for i in range(0, len(train_data_list), batch_size)]:
             boards = jnp.array([i.board_data for (i, _, _) in data_batch])
             boards = boards.reshape((*boards.shape, MnkModel.INPUT_CHANNEL))
-            improved_probabilities = jnp.array([p for (_, p, _) in data_batch])
+            improved_probs = jnp.array([p for (_, p, _) in data_batch])
             winners = jnp.array([w for (_, _, w) in data_batch])
-            (loss, _), grads = grad_fn(model, (boards, improved_probabilities, winners))
+            (loss, _), grads = grad_fn(model, (boards, improved_probs, winners))
             metric.update(loss=loss)
             optimizer.update(model, grads)
         for name, value in metric.compute().items():
@@ -466,9 +466,9 @@ class MnkNetwork(Network):
         for data_batch in [val_data_list[i : i + batch_size] for i in range(0, len(val_data_list), batch_size)]:
             boards = jnp.array([i.board_data for (i, _, _) in data_batch])
             boards = boards.reshape((*boards.shape, MnkModel.INPUT_CHANNEL))
-            improved_probabilities = jnp.array([p for (_, p, _) in data_batch])
+            improved_probs = jnp.array([p for (_, p, _) in data_batch])
             winners = jnp.array([w for (_, _, w) in data_batch])
-            loss, _ = _loss_fn(model, (boards, improved_probabilities, winners))
+            loss, _ = _loss_fn(model, (boards, improved_probs, winners))
             metric.update(loss=loss)
         for name, value in metric.compute().items():
             metric_record[f"val_{name}"] = value
@@ -523,15 +523,15 @@ def evaluate(
         if output_dir is not None:
             competition_file_path = output_dir / f"competition-{i:0{len(str(competitions_num))}d}.txt"
             with open(competition_file_path, "w") as competition_file:
-                for j, (state, prior_probabilities, search_probabilities, value) in enumerate(moves):
+                for j, (state, prior_probs, search_probs, value) in enumerate(moves):
                     is_in_red_turn = j % 2 == 0  # Red always moves first. Ref: `MnkGame.simulate` method.
                     competition_file.write(f"{state}\n")
                     competition_file.write(
                         f"Model: {model1.name if is_model1_first_mover == is_in_red_turn else model2.name} "
                         + f"({(StoneColor.RED if is_in_red_turn else StoneColor.GREEN).get_mark()})\n"
                     )
-                    competition_file.write(f"Prior probabilities:\n{format_board(prior_probabilities, game.m)}\n")
-                    competition_file.write(f"Search probabilities:\n{format_board(search_probabilities, game.m)}\n")
+                    competition_file.write(f"Prior probabilities:\n{format_board(prior_probs, game.m)}\n")
+                    competition_file.write(f"Search probabilities:\n{format_board(search_probs, game.m)}\n")
                     competition_file.write(f"Value: {value:.2f}\n")
                     competition_file.write("\n")
                 competition_file.write(f"{last_state}\n")
@@ -567,7 +567,7 @@ def augment_data(data: tuple[MnkState, list[float], float]) -> dict[str, tuple[M
     """
     Leverage the symmetry of the board to augment data by applying dihedral reflections or rotations.
     """
-    state, probabilities, reward = data
+    state, probs, reward = data
     n = len(state.board)
     m = len(state.board[0])
 
@@ -607,37 +607,37 @@ def augment_data(data: tuple[MnkState, list[float], float]) -> dict[str, tuple[M
         new_state = MnkState(new_board, state.stone_count, new_last_action)
         return new_state
 
-    # `_flip_probabilities_*` functions use the same layout as `MnkGame.list_all_actions` method to ensure the same action order.
+    # `_flip_probs_*` functions use the same layout as `MnkGame.list_all_actions` method to ensure the same action order.
     # Please refer to `..core.network.Model` class for details.
 
-    def _flip_probabilities_vertically(probabilities: list[float]) -> list[float]:
+    def _flip_probs_vertically(probs: list[float]) -> list[float]:
         """ """
-        new_probabilities: list[float] = []
+        new_probs: list[float] = []
         for y in reversed(range(n)):
-            new_row = [probabilities[y * m + x] for x in range(m)]
-            new_probabilities += new_row
-        return new_probabilities
+            new_row = [probs[y * m + x] for x in range(m)]
+            new_probs += new_row
+        return new_probs
 
-    def _flip_probabilities_horizontally(probabilities: list[float]) -> list[float]:
+    def _flip_probs_horizontally(probs: list[float]) -> list[float]:
         """ """
-        new_probabilities: list[float] = []
+        new_probs: list[float] = []
         for y in range(n):
-            new_row = [probabilities[y * m + x] for x in reversed(range(m))]
-            new_probabilities += new_row
-        return new_probabilities
+            new_row = [probs[y * m + x] for x in reversed(range(m))]
+            new_probs += new_row
+        return new_probs
 
-    def _flip_probabilities_centrally(probabilities: list[float]) -> list[float]:
+    def _flip_probs_centrally(probs: list[float]) -> list[float]:
         """ """
-        new_probabilities: list[float] = []
+        new_probs: list[float] = []
         for y in reversed(range(n)):
-            new_row = [probabilities[y * m + x] for x in reversed(range(m))]
-            new_probabilities += new_row
-        return new_probabilities
+            new_row = [probs[y * m + x] for x in reversed(range(m))]
+            new_probs += new_row
+        return new_probs
 
     augmented_data_list: dict[str, tuple[MnkState, list[float], float]] = {
-        "vertical": (_flip_state_vertically(state), _flip_probabilities_vertically(probabilities), reward),
-        "horizontal": (_flip_state_horizontally(state), _flip_probabilities_horizontally(probabilities), reward),
-        "central": (_flip_state_centrally(state), _flip_probabilities_centrally(probabilities), reward),
+        "vertical": (_flip_state_vertically(state), _flip_probs_vertically(probs), reward),
+        "horizontal": (_flip_state_horizontally(state), _flip_probs_horizontally(probs), reward),
+        "central": (_flip_state_centrally(state), _flip_probs_centrally(probs), reward),
         # TODO: Add rotations.
     }
     return augmented_data_list

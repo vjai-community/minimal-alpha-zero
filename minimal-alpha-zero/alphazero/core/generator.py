@@ -42,12 +42,12 @@ class Edge:
     """
 
     node: Node  # The child node, not the parent
-    prior_probability: float  # P(s,a)
+    prior_prob: float  # P(s,a)
     action_value: float  # Q(s,a)
     visit_count: int  # N(s,a)
 
-    def __init__(self, node: Node, prior_probability: float):
-        self.prior_probability = prior_probability
+    def __init__(self, node: Node, prior_prob: float):
+        self.prior_prob = prior_prob
         self.node = node
         self.action_value = 0.0
         self.visit_count = 0
@@ -58,18 +58,18 @@ class PlayConfig:
 
     simulations_num: int
     c_puct: float
-    calculate_temperature: Callable[[int], float]  # τ
+    calc_temperature: Callable[[int], float]  # τ
 
     def __init__(
         self,
         *,
         simulations_num: int = 1,
         c_puct: float = 1.0,
-        calculate_temperature: Callable[[int], float] = lambda _: 1.0,
+        calc_temperature: Callable[[int], float] = lambda _: 1.0,
     ):
         self.simulations_num = simulations_num
         self.c_puct = c_puct
-        self.calculate_temperature = calculate_temperature
+        self.calc_temperature = calc_temperature
 
 
 class NoiseSession:
@@ -111,7 +111,7 @@ def generate_data(
             # Just in case.
             continue
         data_list: list[tuple[State, list[float], float]] = []
-        for j, (state, _, search_probabilities, _) in enumerate(moves):
+        for j, (state, _, search_probs, _) in enumerate(moves):
             # The sign of reward for each move (positive or negative) alternates based on current player's perspective,
             # since two players take turns: Player A moves first, Player B moves second, then Player A again, and so on.
             # It also depends on which player makes the last move and whether that player wins or loses.
@@ -120,7 +120,7 @@ def generate_data(
             # NOTE: In case of a draw, all rewards should be 0.
             is_current_player_last_mover = (len(moves) - 1 - j) % 2 == 0
             cur_reward = reward * (1 if is_current_player_last_mover else -1)
-            data_list.append((state, search_probabilities, cur_reward))
+            data_list.append((state, search_probs, cur_reward))
         yield data_list
         # Next self-play.
         i += 1
@@ -165,9 +165,9 @@ def play(
             config,
             noise_session,
         )
-        prior_probabilities = [node.children[a].prior_probability if a in node.children else 0.0 for a in all_actions]
-        search_probabilities = [legal_searches[a] if a in legal_searches else 0.0 for a in all_actions]
-        moves.append((node.state, prior_probabilities, search_probabilities, node.value))
+        prior_probs = [node.children[a].prior_prob if a in node.children else 0.0 for a in all_actions]
+        search_probs = [legal_searches[a] if a in legal_searches else 0.0 for a in all_actions]
+        moves.append((node.state, prior_probs, search_probs, node.value))
         # Move to the next model and next node.
         i += 1
         state = node.children[action].node.state
@@ -212,7 +212,7 @@ def _play_select(
     # Select a move according to the search probabilities π computed by MCTS.
     # π(a|s) = N(s,a)^(1/τ) / (∑b N(s,b)^(1/τ))
     scaled_visit_counts = {
-        a: math.pow(e.visit_count, 1 / config.calculate_temperature(move_index)) for a, e in node.children.items()
+        a: math.pow(e.visit_count, 1 / config.calc_temperature(move_index)) for a, e in node.children.items()
     }
     scaled_visit_counts_sum = sum(scaled_visit_counts.values())
     legal_searches = {a: c / scaled_visit_counts_sum for a, c in scaled_visit_counts.items()}
@@ -256,7 +256,7 @@ def _mcts_select(node: Node, c_puct: float) -> Action:
     Use a variant of PUCT algorithm to select an action during an MCTS simulation.
     """
 
-    def _calculate_puct_score(
+    def _calc_puct_score(
         edge: Edge,
         visit_counts_sum: float,  # ∑b N(s,b)
     ) -> float:
@@ -264,14 +264,14 @@ def _mcts_select(node: Node, c_puct: float) -> Action:
         # Q(s,a)
         exploitation_term = edge.action_value
         # U(s,a) = c_puct * P(s,a) * sqrt(∑b N(s,b)) / (1+N(s,a))
-        exploration_term = c_puct * edge.prior_probability * math.sqrt(visit_counts_sum) / (1 + edge.visit_count)
+        exploration_term = c_puct * edge.prior_prob * math.sqrt(visit_counts_sum) / (1 + edge.visit_count)
         # Q(s,a) + U(s,a)
         return exploitation_term + exploration_term
 
     # NOTE: Assume the node is not a leaf.
     visit_counts_sum = sum([e.visit_count for e in node.children.values()])
     # Select action with the maximum PUCT score.
-    action = max(node.children, key=lambda a: _calculate_puct_score(node.children[a], visit_counts_sum))
+    action = max(node.children, key=lambda a: _calc_puct_score(node.children[a], visit_counts_sum))
     return action
 
 
@@ -279,7 +279,7 @@ def _expand(node: Node, game: Game, model: Model):
     """
     Evaluate a leaf node by assigning a value to its state and prior probabilities to each of its edges.
     """
-    prior_probabilities: dict[Action, float]
+    prior_probs: dict[Action, float]
     value = 0.0
     legal_actions: list[Action]
     reward = game.receive_reward_if_terminal(node.state)
@@ -289,18 +289,18 @@ def _expand(node: Node, game: Game, model: Model):
         # For example, if a state is terminal and has a reward of `1`, it means the opponent won with the last move,
         # so the current player lost, and the current state's value is `-1`.
         # Ref: `.game.Game.receive_reward_if_terminal` method.
-        prior_probabilities, value = {}, -reward
+        prior_probs, value = {}, -reward
         # There are no legal actions available for a terminal state.
         legal_actions = []
     else:
-        prior_probabilities, value = model.predict_single(node.state.make_input_data())
+        prior_probs, value = model.predict_single(node.state.make_input_data())
         # The prior may contain non-zero probabilities for illegal actions. We need to eliminate those and keep only the legal ones.
         legal_actions = game.list_legal_actions(node.state)
-    legal_prior_probabilities = {a: p for a, p in prior_probabilities.items() if a in legal_actions}
+    legal_prior_probs = {a: p for a, p in prior_probs.items() if a in legal_actions}
     # Create new edges that include prior probabilities only for legal actions.
     for action in legal_actions:
         state = game.simulate(node.state, action)
-        node.children[action] = Edge(Node(state), legal_prior_probabilities[action])
+        node.children[action] = Edge(Node(state), legal_prior_probs[action])
     node.value = value
 
 
@@ -327,4 +327,4 @@ def _add_noise(node: Node, session: NoiseSession):
     session.key = key
     noises = jax.random.dirichlet(subkey, jnp.full((len(node.children),), session.dirichlet_alpha))
     for edge, noise in zip(node.children.values(), noises):
-        edge.prior_probability = edge.prior_probability * (1 - session.fraction) + session.fraction * noise
+        edge.prior_prob = edge.prior_prob * (1 - session.fraction) + session.fraction * noise
