@@ -11,7 +11,7 @@ from typing import Optional
 
 import optax
 from flax import nnx
-from jax import Array, numpy as jnp
+from jax import Array, nn, numpy as jnp
 
 from ..core.game import Action, InputData, State, Game, ReplayBuffer
 from ..core.network import Model, Network
@@ -282,11 +282,12 @@ class MnkModel(nnx.Module, NamedModel):
         x = x.reshape((1, *x.shape, MnkModel.INPUT_CHANNEL))
         prior_probabilities_output, value_output = self(x)
         prior_probabilities: dict[MnkAction, float] = {}
+        prior_probabilities_output = nn.softmax(prior_probabilities_output[0])
         for y in range(m):
             for x in range(n):
                 # Use the same layout as `MnkGame.list_all_actions` method to ensure the same action order.
                 # Please refer to `..core.network.Model` class for details.
-                prior_probabilities[MnkAction(x, y)] = prior_probabilities_output[0][y * n + x].item()
+                prior_probabilities[MnkAction(x, y)] = prior_probabilities_output[y * n + x].item()
         value: float = value_output.item()
         return prior_probabilities, value
 
