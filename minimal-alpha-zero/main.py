@@ -5,10 +5,11 @@ import pathlib
 import random
 import time
 
+import jax
 from flax import nnx
 
 from alphazero.core.game import ReplayBuffer
-from alphazero.core.generator import generate_data
+from alphazero.core.generator import PlayConfig, NoiseSession, generate_data
 from alphazero.games.mnk import MnkGame, MnkConfig, MnkNetwork, DummyModel, evaluate, EVALUATION_DUMMY_BEST_DIR_NAME
 
 
@@ -25,11 +26,11 @@ def main():
     m, n, k = 4, 4, 3
     # If we want the first player to be unable to always force a win, but still have a reasonable chance of winning,
     # consider choosing: m, n, k = (5, 5, 4)
-    select_simulations_num = m * n * 2
     seed = int(time.time() * 1000)
     run_time = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     logger.info(f"seed={seed}, run_time={run_time}")
     random.seed(seed)
+    noise_key = jax.random.PRNGKey(seed)
     rngs = nnx.Rngs(seed)
     run_dir = STORAGE_DIR / run_time
     os.makedirs(run_dir, exist_ok=True)
@@ -37,15 +38,30 @@ def main():
         config_file.write(f"seed={seed}\n")
 
     # Initialize the game.
+    c_puct = 2.0  # TODO: Tune this hyperparameter
     mnk_game = MnkGame(m, n, k)
+    training_play_config = PlayConfig(
+        simulations_num=m * n * 5,
+        c_puct=c_puct,
+        temperature=1.0,  # TODO: Tune this hyperparameter
+    )
+    evaluation_play_config = PlayConfig(
+        simulations_num=m * n * 5,
+        c_puct=c_puct,
+        temperature=0.1,  # Lower temperature for stronger play
+    )
+    noise_session = NoiseSession(
+        key=noise_key,
+        dirichlet_alpha=0.5,
+        fraction=0.25,
+    )
     mnk_config = MnkConfig(
         learning_rate=0.0005,
         epochs_num=100,
         batch_size=128,
         competitions_num=250,
         competition_margin=0.1,
-        select_simulations_num=select_simulations_num,
-        select_temperature=0.1,
+        play_config=evaluation_play_config,
         rngs=rngs,
     )
     mnk_network = MnkNetwork(m, n, mnk_config)
@@ -58,8 +74,7 @@ def main():
         mnk_network.get_best_model(),
         mnk_game,
         mnk_config.competitions_num,
-        mnk_config.select_simulations_num,
-        mnk_config.select_temperature,
+        mnk_config.play_config,
         output_dir=run_dir / "initial" / EVALUATION_DUMMY_BEST_DIR_NAME,
     )
     for i in range(ITERATIONS_NUM):
@@ -67,8 +82,9 @@ def main():
         for data in generate_data(
             mnk_game,
             mnk_network.get_best_model(),
-            self_plays_num=1000,
-            self_play_select_simulations_num=select_simulations_num,
+            1000,
+            training_play_config,
+            noise_session=noise_session,
         ):
             replay_buffer.append(data)
         logger.info(f"replay_buffer_len={len(replay_buffer.buffer)}")

@@ -7,6 +7,9 @@ import math
 import random
 from typing import Iterable, Optional
 
+import jax
+from jax import numpy as jnp
+
 from .game import Action, State, Game
 from .network import Model
 
@@ -50,19 +53,60 @@ class Edge:
         self.visit_count = 0
 
 
+class PlayConfig:
+    """ """
+
+    simulations_num: int
+    c_puct: float
+    temperature: float  # τ
+
+    def __init__(
+        self,
+        *,
+        simulations_num: int = 1,
+        c_puct: float = 1.0,
+        temperature: float = 1.0,
+    ):
+        self.simulations_num = simulations_num
+        self.c_puct = c_puct
+        self.temperature = temperature
+
+
+class NoiseSession:
+    """ """
+
+    key: jax.Array
+    # There is a heuristic that uses α=10/n, where n is the maximum number of legal actions.
+    # Doc: https://jonathan-laurent.github.io/AlphaZero.jl/stable/reference/params/#MCTS
+    dirichlet_alpha: float  # α
+    fraction: float  # ε
+
+    def __init__(
+        self,
+        *,
+        key: Optional[jax.Array] = None,
+        dirichlet_alpha: float = 0.0,
+        fraction: float = 0.0,
+    ):
+        self.key = key
+        self.dirichlet_alpha = dirichlet_alpha
+        self.fraction = fraction
+
+
 def generate_data(
     game: Game,
     model: Model,
-    self_plays_num: Optional[int] = None,
-    self_play_select_simulations_num: int = 1,
+    self_plays_num: int,
+    play_config: PlayConfig,
+    noise_session: Optional[NoiseSession] = None,
 ) -> Iterable[tuple[State, list[float], float]]:
     """
     Continuously play games over many self-plays to generate data.
     """
     i = 0
-    while self_plays_num is None or i < self_plays_num:
+    while i < self_plays_num:
         # Use the same model for both players during self-play.
-        _, moves, reward = play(game, [model], self_play_select_simulations_num)
+        _, moves, reward = play(game, [model], play_config, noise_session=noise_session)
         if len(moves) == 0 or reward is None:
             # Just in case.
             continue
@@ -83,8 +127,8 @@ def generate_data(
 def play(
     game: Game,
     models: list[Model],
-    select_simulations_num: int,
-    select_temperature: float = 1.0,  # TODO: Tune this hyperparameter
+    config: PlayConfig,
+    noise_session: Optional[NoiseSession] = None,
 ) -> tuple[State, list[tuple[State, list[float], list[float], float]], float]:
     """
     Play a game with multiple players.
@@ -115,8 +159,8 @@ def play(
             node,
             game,
             models[i % len(models)],
-            select_simulations_num,
-            select_temperature,
+            config,
+            noise_session,
         )
         prior_probabilities = [node.children[a].prior_probability if a in node.children else 0.0 for a in all_actions]
         search_probabilities = [legal_searches[a] if a in legal_searches else 0.0 for a in all_actions]
@@ -141,8 +185,8 @@ def _play_select(
     node: Node,
     game: Game,
     model: Model,
-    simulations_num: int,
-    temperature: float,  # τ
+    config: PlayConfig,
+    noise_session: Optional[NoiseSession],
 ) -> tuple[Action, dict[Action, float]]:
     """
     Select a legal action to move to a new state.
@@ -151,22 +195,26 @@ def _play_select(
     # Execute MCTS simulations.
     if node.is_leaf:
         # Run an initial simulation to expand a leaf node.
-        simulations_num += 1
-    while i < simulations_num:
-        for expanded_state, expanded_node in _execute_an_mcts_simulation(node, game, model).items():
+        for expanded_state, expanded_node in _execute_an_mcts_simulation(node, game, model, config.c_puct).items():
+            state_cache[expanded_state] = expanded_node
+    # Add noise to the root node.
+    if noise_session is not None:
+        _add_noise(node, noise_session)
+    while i < config.simulations_num:
+        for expanded_state, expanded_node in _execute_an_mcts_simulation(node, game, model, config.c_puct).items():
             state_cache[expanded_state] = expanded_node
         # Next simulation.
         i += 1
     # Select a move according to the search probabilities π computed by MCTS.
     # π(a|s) = N(s,a)^(1/τ) / (∑b N(s,b)^(1/τ))
-    scaled_visit_counts = {a: math.pow(e.visit_count, 1 / temperature) for a, e in node.children.items()}
+    scaled_visit_counts = {a: math.pow(e.visit_count, 1 / config.temperature) for a, e in node.children.items()}
     scaled_visit_counts_sum = sum(scaled_visit_counts.values())
     legal_searches = {a: c / scaled_visit_counts_sum for a, c in scaled_visit_counts.items()}
     action = random.choices(list(legal_searches.keys()), weights=list(legal_searches.values()))[0]
     return action, legal_searches
 
 
-def _execute_an_mcts_simulation(root: Node, game: Game, model: Model) -> dict[State, Node]:
+def _execute_an_mcts_simulation(root: Node, game: Game, model: Model, c_puct: float) -> dict[State, Node]:
     """
     Return a dictionary mapping each expanded state to its corresponding node.
     NOTE: By "root", we mean the node where MCTS simulation begins, not an initial game state.
@@ -179,7 +227,7 @@ def _execute_an_mcts_simulation(root: Node, game: Game, model: Model) -> dict[St
         if is_finished:
             break
         # Select an action according to edge statistics.
-        action = _mcts_select(node)
+        action = _mcts_select(node, c_puct)
         edge = node.children[action]
         edges.append(edge)
         # Move to the next node.
@@ -197,7 +245,7 @@ def _execute_an_mcts_simulation(root: Node, game: Game, model: Model) -> dict[St
     return expanded_states
 
 
-def _mcts_select(node: Node) -> Action:
+def _mcts_select(node: Node, c_puct: float) -> Action:
     """
     Use a variant of PUCT algorithm to select an action during an MCTS simulation.
     """
@@ -205,7 +253,6 @@ def _mcts_select(node: Node) -> Action:
     def _calculate_puct_score(
         edge: Edge,
         visit_counts_sum: float,  # ∑b N(s,b)
-        c_puct: float = 1.0,  # TODO: Tune this hyperparameter
     ) -> float:
         """ """
         # Q(s,a)
@@ -249,3 +296,14 @@ def _backup(edges: list[Edge], value: float):
         cur_value = value * (1 if is_current_player_last_mover else -1)
         edge.action_value = (edge.action_value * edge.visit_count + cur_value) / (edge.visit_count + 1)
         edge.visit_count += 1
+
+
+def _add_noise(node: Node, session: NoiseSession):
+    """
+    Add Dirichlet noise to the prior probabilities.
+    """
+    key, subkey = jax.random.split(session.key)
+    session.key = key
+    noises = jax.random.dirichlet(subkey, jnp.full((len(node.children),), session.dirichlet_alpha))
+    for edge, noise in zip(node.children.values(), noises):
+        edge.prior_probability = edge.prior_probability * (1 - session.fraction) + session.fraction * noise

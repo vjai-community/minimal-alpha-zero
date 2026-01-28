@@ -4,6 +4,7 @@ from typing import Optional
 import pytest
 from flax import nnx
 
+from ..core.generator import PlayConfig
 from .mnk import StoneColor, Stone, MnkAction, MnkState, MnkGame, MnkConfig, MnkNetwork, evaluate
 
 
@@ -54,14 +55,18 @@ class TestMnk:
         """ """
         m, n, k = 4, 4, 3
         mnk_game = MnkGame(m, n, k)
+        play_config = PlayConfig(
+            simulations_num=m * n * 5,
+            c_puct=2.0,
+            temperature=0.1,  # Lower temperature for stronger play
+        )
         mnk_config = MnkConfig(
             learning_rate=0.0005,
             epochs_num=100,
             batch_size=128,
             competitions_num=250,
             competition_margin=0.1,
-            select_simulations_num=m * n * 2,
-            select_temperature=0.1,
+            play_config=play_config,
         )
         mnk_network = MnkNetwork(m, n, mnk_config)
         candidate_model = nnx.clone(mnk_network.get_best_model())
@@ -70,7 +75,6 @@ class TestMnk:
             candidate_model,
             mnk_game,
             mnk_config.competitions_num,
-            mnk_config.select_simulations_num,
-            mnk_config.select_temperature,
+            mnk_config.play_config,
         )
         assert abs(result) < mnk_config.competition_margin

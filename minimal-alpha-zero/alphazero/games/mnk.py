@@ -15,7 +15,7 @@ from jax import Array, nn, numpy as jnp
 
 from ..core.game import Action, InputData, State, Game, ReplayBuffer
 from ..core.network import Model, Network
-from ..core.generator import play
+from ..core.generator import PlayConfig, play
 
 
 EVALUATION_DUMMY_BEST_DIR_NAME = "evaluation-dummy-best"
@@ -319,8 +319,7 @@ class MnkConfig:
     batch_size: int
     competitions_num: int
     competition_margin: float  # Should be positive and less than 1
-    select_simulations_num: int
-    select_temperature: float
+    play_config: PlayConfig
     rngs: nnx.Rngs
 
     def __init__(
@@ -331,8 +330,7 @@ class MnkConfig:
         batch_size: int,
         competitions_num: int,
         competition_margin: float,
-        select_simulations_num: int,
-        select_temperature: float,
+        play_config: PlayConfig,
         rngs: nnx.Rngs = nnx.Rngs(0),
     ):
         self.learning_rate = learning_rate
@@ -340,8 +338,7 @@ class MnkConfig:
         self.batch_size = batch_size
         self.competitions_num = competitions_num
         self.competition_margin = competition_margin
-        self.select_simulations_num = select_simulations_num
-        self.select_temperature = select_temperature
+        self.play_config = play_config
         self.rngs = rngs
 
 
@@ -379,8 +376,7 @@ class MnkNetwork(Network):
             candidate_model,
             game,
             self.config.competitions_num,
-            self.config.select_simulations_num,
-            self.config.select_temperature,
+            self.config.play_config,
             output_dir=output_dir / EVALUATION_BEST_CANDIDATE_DIR_NAME,
         )
         is_best_model_updated = False
@@ -395,8 +391,7 @@ class MnkNetwork(Network):
                 self.best_model,
                 game,
                 self.config.competitions_num,
-                self.config.select_simulations_num,
-                self.config.select_temperature,
+                self.config.play_config,
                 output_dir=output_dir / EVALUATION_DUMMY_BEST_DIR_NAME,
             )
         return is_best_model_updated
@@ -444,8 +439,7 @@ def evaluate(
     model2: NamedModel,
     game: MnkGame,
     competitions_num: int,
-    select_simulations_num: int,
-    select_temperature: float,
+    play_config: PlayConfig,
     output_dir: Optional[os.PathLike] = None,
 ) -> float:
     """
@@ -460,12 +454,8 @@ def evaluate(
         Return -1 if `model1` wins, 1 if `model2` wins, `0` for a draw.
         NOTE: `model1` always moves first.
         """
-        last_state, moves, reward = play(
-            game,
-            [model1, model2],
-            select_simulations_num,
-            select_temperature=select_temperature,
-        )
+        # Do not add noise during evaluation.
+        last_state, moves, reward = play(game, [model1, model2], play_config)
         is_model1_last_mover = len(moves) % 2 == 1
         if reward == 0.0:
             return last_state, moves, 0.0
