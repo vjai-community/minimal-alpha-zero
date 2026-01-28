@@ -4,6 +4,19 @@ from abc import ABC, abstractmethod
 from .game import Action, InputData, Game, ReplayBuffer
 
 
+class ModelConfig:
+    """ """
+
+    should_execute_mcts: bool
+
+    def __init__(
+        self,
+        *,
+        should_execute_mcts: bool = True,
+    ):
+        self.should_execute_mcts = should_execute_mcts
+
+
 class Model(ABC):
     """
     Inner model of the network.

@@ -11,7 +11,7 @@ import jax
 from jax import numpy as jnp
 
 from .game import Action, State, Game
-from .network import Model
+from .network import ModelConfig, Model
 
 
 logger = logging.getLogger(__name__)
@@ -106,7 +106,7 @@ def generate_data(
     i = 0
     while i < self_plays_num:
         # Use the same model for both players during self-play.
-        _, moves, reward = play(game, [model], play_config, noise_session=noise_session)
+        _, moves, reward = play(game, [(model, ModelConfig())], play_config, noise_session=noise_session)
         if len(moves) == 0 or reward is None:
             # Just in case.
             continue
@@ -128,7 +128,7 @@ def generate_data(
 
 def play(
     game: Game,
-    models: list[Model],
+    model_specs: list[tuple[Model, ModelConfig]],
     config: PlayConfig,
     noise_session: Optional[NoiseSession] = None,
 ) -> tuple[State, list[tuple[State, list[float], list[float], float]], float]:
@@ -142,7 +142,7 @@ def play(
     # we must check whether the next state exists in the tree.
     # Theoretically, we could do this by storing only a root node for each model and performing a recursive search,
     # but since this approach is inefficient, we store the list of existing states in `state_caches` variable for faster checking.
-    state_caches: list[dict[State, Node]] = [{} for _ in range(len(models))]
+    state_caches: list[dict[State, Node]] = [{} for _ in range(len(model_specs))]
     node = Node(game.begin())
     moves: list[tuple[State, list[float], list[float], float]] = []
     reward = 0.0
@@ -153,105 +153,106 @@ def play(
         is_terminated = reward is not None
         if is_terminated:
             break
-        # Select the next action.
-        # TODO: Allow models to apply their own custom selection strategies instead of executing MCTS for them,
-        # as they may not be trained using AlphaZero.
-        action, legal_searches = _play_select(
-            i,
-            state_caches[i % len(models)],
-            node,
-            game,
-            models[i % len(models)],
-            config,
-            noise_session,
-        )
-        prior_probs = [node.children[a].prior_prob if a in node.children else 0.0 for a in all_actions]
-        search_probs = [legal_searches[a] if a in legal_searches else 0.0 for a in all_actions]
-        moves.append((node.state, prior_probs, search_probs, node.value))
+        # Search for the probabilities of legal actions for the next move.
+        search_probs: dict[Action, float]
+        model, model_config = model_specs[i % len(model_specs)]
+        if model_config.should_execute_mcts:
+            _execute_mcts(state_caches[i % len(model_specs)], node, game, model, config, noise_session)
+            # Select a move according to the search probabilities π computed by MCTS.
+            # π(a|s) = N(s,a)^(1/τ) / (∑b N(s,b)^(1/τ))
+            scaled_visit_counts = {
+                a: math.pow(e.visit_count, 1 / config.calc_temperature(i)) for a, e in node.children.items()
+            }
+            scaled_visit_counts_sum = sum(scaled_visit_counts.values())
+            search_probs = {a: c / scaled_visit_counts_sum for a, c in scaled_visit_counts.items()}
+        else:
+            if node.is_leaf:
+                # If MCTS is not executed, we directly use the prior probabilities instead of the visit counts.
+                _expand(node, game, model)
+            # Simply use the same formula as in the case where MCTS execution is enabled, although there may be a better approach.
+            scaled_prior_probs = {
+                a: math.pow(e.prior_prob, 1 / config.calc_temperature(i)) for a, e in node.children.items()
+            }
+            scaled_prior_probs_sum = sum(scaled_prior_probs.values())
+            search_probs = {a: p / scaled_prior_probs_sum for a, p in scaled_prior_probs.items()}
+        all_prior_probs = [node.children[a].prior_prob if a in node.children else 0.0 for a in all_actions]
+        all_search_probs = [search_probs[a] if a in search_probs else 0.0 for a in all_actions]
+        moves.append((node.state, all_prior_probs, all_search_probs, node.value))
+        action = random.choices(all_actions, weights=all_search_probs)[0]  # Next action
         # Move to the next model and next node.
         i += 1
         state = node.children[action].node.state
-        if state in state_caches[i % len(models)]:
-            node = state_caches[i % len(models)][state]
+        if state in state_caches[i % len(model_specs)]:
+            node = state_caches[i % len(model_specs)][state]
         else:
             # Because trees are independent across different models, when we switch to the tree of the next model,
             # there is a chance that the new state has not been discovered by that model;
             # therefore, the corresponding node does not exist in the tree.
             # In that case, we create a new root node and reset the entire tree for the next model.
             node = Node(state)
-            state_caches[i % len(models)] = {}
+            state_caches[i % len(model_specs)] = {}
     return node.state, moves, reward
 
 
-def _play_select(
-    move_index: int,
+def _execute_mcts(
     state_cache: dict[State, Node],
     node: Node,
     game: Game,
     model: Model,
     config: PlayConfig,
     noise_session: Optional[NoiseSession],
-) -> tuple[Action, dict[Action, float]]:
+):
     """
-    Select a legal action to move to a new state.
+    Execute multiple MCTS simulations.
     """
+
+    def _execute_one_simulation(root: Node, game: Game, model: Model, c_puct: float) -> dict[State, Node]:
+        """
+        Return a dictionary mapping each expanded state to its corresponding node.
+        NOTE: By "root", we mean the node where MCTS simulation begins, not an initial game state.
+        """
+        node = root
+        edges: list[Edge] = []
+        while True:
+            # TODO: Store the reward to avoid calculating it multiple times.
+            is_finished = node.is_leaf or game.receive_reward_if_terminal(node.state) is not None
+            if is_finished:
+                break
+            # Select an action according to edge statistics.
+            action = _select(node, c_puct)
+            edge = node.children[action]
+            edges.append(edge)
+            # Move to the next node.
+            node = edge.node
+        expanded_states: dict[State, Node] = {}
+        # We evaluate a leaf node only once during a game play.
+        # If the node is not a leaf, it should be a terminal node, in that case, we do not expand it again.
+        if node.is_leaf:
+            # Expand and evaluate a leaf node.
+            _expand(node, game, model)
+            for edge in node.children.values():
+                expanded_states[edge.node.state] = edge.node
+        # Update edge statistics in a backward pass through each move.
+        _backup(edges, node.value)
+        return expanded_states
+
     i = 0
     # Execute MCTS simulations.
     if node.is_leaf:
         # Run an initial simulation to expand a leaf node.
-        for expanded_state, expanded_node in _execute_an_mcts_simulation(node, game, model, config.c_puct).items():
+        for expanded_state, expanded_node in _execute_one_simulation(node, game, model, config.c_puct).items():
             state_cache[expanded_state] = expanded_node
     # Add noise to the root node.
     if noise_session is not None:
         _add_noise(node, noise_session)
     while i < config.simulations_num:
-        for expanded_state, expanded_node in _execute_an_mcts_simulation(node, game, model, config.c_puct).items():
+        for expanded_state, expanded_node in _execute_one_simulation(node, game, model, config.c_puct).items():
             state_cache[expanded_state] = expanded_node
         # Next simulation.
         i += 1
-    # Select a move according to the search probabilities π computed by MCTS.
-    # π(a|s) = N(s,a)^(1/τ) / (∑b N(s,b)^(1/τ))
-    scaled_visit_counts = {
-        a: math.pow(e.visit_count, 1 / config.calc_temperature(move_index)) for a, e in node.children.items()
-    }
-    scaled_visit_counts_sum = sum(scaled_visit_counts.values())
-    legal_searches = {a: c / scaled_visit_counts_sum for a, c in scaled_visit_counts.items()}
-    action = random.choices(list(legal_searches.keys()), weights=list(legal_searches.values()))[0]
-    return action, legal_searches
 
 
-def _execute_an_mcts_simulation(root: Node, game: Game, model: Model, c_puct: float) -> dict[State, Node]:
-    """
-    Return a dictionary mapping each expanded state to its corresponding node.
-    NOTE: By "root", we mean the node where MCTS simulation begins, not an initial game state.
-    """
-    node = root
-    edges: list[Edge] = []
-    while True:
-        # TODO: Store the reward to avoid calculating it multiple times.
-        is_finished = node.is_leaf or game.receive_reward_if_terminal(node.state) is not None
-        if is_finished:
-            break
-        # Select an action according to edge statistics.
-        action = _mcts_select(node, c_puct)
-        edge = node.children[action]
-        edges.append(edge)
-        # Move to the next node.
-        node = edge.node
-    expanded_states: dict[State, Node] = {}
-    # We evaluate a leaf node only once during a single game play.
-    # If the node is not a leaf, it should be a terminal node, in that case, we do not expand it again.
-    if node.is_leaf:
-        # Expand and evaluate a leaf node.
-        _expand(node, game, model)
-        for edge in node.children.values():
-            expanded_states[edge.node.state] = edge.node
-    # Update edge statistics in a backward pass through each move.
-    _backup(edges, node.value)
-    return expanded_states
-
-
-def _mcts_select(node: Node, c_puct: float) -> Action:
+def _select(node: Node, c_puct: float) -> Action:
     """
     Use a variant of PUCT algorithm to select an action during an MCTS simulation.
     """

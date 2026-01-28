@@ -4,6 +4,7 @@ from typing import Optional
 import pytest
 from flax import nnx
 
+from ..core.network import ModelConfig
 from ..core.generator import PlayConfig
 from .mnk import StoneColor, Stone, MnkAction, MnkState, MnkGame, MnkConfig, MnkNetwork, evaluate
 
@@ -65,6 +66,7 @@ class TestMnk:
             epochs_num=100,
             batch_size=128,
             stopping_patience=5,
+            should_evaluation_execute_mcts=True,
             competitions_num=250,
             competition_margin=0.1,
             play_config=play_config,
@@ -72,8 +74,8 @@ class TestMnk:
         mnk_network = MnkNetwork(m, n, mnk_config)
         candidate_model = nnx.clone(mnk_network.get_best_model())
         result = evaluate(
-            mnk_network.get_best_model(),
-            candidate_model,
+            (mnk_network.get_best_model(), ModelConfig()),
+            (candidate_model, ModelConfig()),
             mnk_game,
             mnk_config.competitions_num,
             mnk_config.play_config,

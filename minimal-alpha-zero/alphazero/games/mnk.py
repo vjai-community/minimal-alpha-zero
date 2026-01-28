@@ -16,7 +16,7 @@ from flax.training.early_stopping import EarlyStopping
 from jax import Array, nn, numpy as jnp
 
 from ..core.game import Action, InputData, State, Game, ReplayBuffer
-from ..core.network import Model, Network
+from ..core.network import ModelConfig, Model, Network
 from ..core.generator import PlayConfig, play
 
 
@@ -320,6 +320,7 @@ class MnkConfig:
     epochs_num: int
     batch_size: int
     stopping_patience: int
+    should_evaluation_execute_mcts: bool
     competitions_num: int
     competition_margin: float  # Should be positive and less than 1
     play_config: PlayConfig
@@ -332,6 +333,7 @@ class MnkConfig:
         epochs_num: int,
         batch_size: int,
         stopping_patience: int,
+        should_evaluation_execute_mcts: bool,
         competitions_num: int,
         competition_margin: float,
         play_config: PlayConfig,
@@ -341,6 +343,7 @@ class MnkConfig:
         self.epochs_num = epochs_num
         self.batch_size = batch_size
         self.stopping_patience = stopping_patience
+        self.should_evaluation_execute_mcts = should_evaluation_execute_mcts
         self.competitions_num = competitions_num
         self.competition_margin = competition_margin
         self.play_config = play_config
@@ -393,8 +396,8 @@ class MnkNetwork(Network):
         self.best_model.eval()  # Switch to eval mode
         candidate_model.eval()  # Switch to eval mode
         result = evaluate(
-            self.best_model,
-            candidate_model,
+            (self.best_model, ModelConfig(should_execute_mcts=self.config.should_evaluation_execute_mcts)),
+            (candidate_model, ModelConfig(should_execute_mcts=self.config.should_evaluation_execute_mcts)),
             game,
             self.config.competitions_num,
             self.config.play_config,
@@ -408,8 +411,8 @@ class MnkNetwork(Network):
             self.best_model.set_name("best")
             dummy_model = DummyModel(self.m, self.n)
             evaluate(
-                dummy_model,
-                self.best_model,
+                (dummy_model, ModelConfig()),  # Always execute MCTS for the dummy model
+                (self.best_model, ModelConfig(should_execute_mcts=self.config.should_evaluation_execute_mcts)),
                 game,
                 self.config.competitions_num,
                 self.config.play_config,
@@ -477,27 +480,27 @@ class MnkNetwork(Network):
 
 
 def evaluate(
-    model1: NamedModel,
-    model2: NamedModel,
+    model_spec1: tuple[NamedModel, ModelConfig],
+    model_spec2: tuple[NamedModel, ModelConfig],
     game: MnkGame,
     competitions_num: int,
     play_config: PlayConfig,
     output_dir: Optional[os.PathLike] = None,
 ) -> float:
     """
-    Return a result close to -1 if `model1` is better, and close to 1 if `model2` is better.
+    Return a result close to -1 if `model_spec1` is better, and close to 1 if `model2` is better.
     """
 
     def _compete_one_game(
-        model1: Model, model2: Model
+        model_spec1: tuple[Model, ModelConfig], model_spec2: tuple[Model, ModelConfig]
     ) -> tuple[State, list[tuple[State, list[float], list[float], float]], float]:
         """
         Have two models play a game and choose the better one based on the reward.
-        Return -1 if `model1` wins, 1 if `model2` wins, `0` for a draw.
-        NOTE: `model1` always moves first.
+        Return -1 if `model_spec1` wins, 1 if `model_spec2` wins, `0` for a draw.
+        NOTE: `model_spec1` always moves first.
         """
         # Do not add noise during evaluation.
-        last_state, moves, reward = play(game, [model1, model2], play_config)
+        last_state, moves, reward = play(game, [model_spec1, model_spec2], play_config)
         is_model1_last_mover = len(moves) % 2 == 1
         if reward == 0.0:
             return last_state, moves, 0.0
@@ -506,6 +509,8 @@ def evaluate(
 
     if output_dir is not None:
         os.makedirs(output_dir, exist_ok=True)
+    model1, _ = model_spec1
+    model2, _ = model_spec2
     result = 0.0
     for i in range(competitions_num):
         is_model1_first_mover = i % 2 == 0
@@ -514,10 +519,10 @@ def evaluate(
         cur_result: float
         # Two models take turns having the first move in each competition.
         if is_model1_first_mover:
-            last_state, moves, cur_result = _compete_one_game(model1, model2)
+            last_state, moves, cur_result = _compete_one_game(model_spec1, model_spec2)
             result += cur_result
         else:
-            last_state, moves, cur_result = _compete_one_game(model2, model1)
+            last_state, moves, cur_result = _compete_one_game(model_spec2, model_spec1)
             result -= cur_result
         # Log the moves.
         if output_dir is not None:

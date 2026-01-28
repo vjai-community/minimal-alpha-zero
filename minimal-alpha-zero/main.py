@@ -8,6 +8,7 @@ import time
 from flax import nnx
 
 from alphazero.core.game import ReplayBuffer
+from alphazero.core.network import ModelConfig
 from alphazero.core.generator import PlayConfig, generate_data
 from alphazero.games.mnk import (
     MnkGame,
@@ -79,6 +80,7 @@ def main():
         epochs_num=100,
         batch_size=128,
         stopping_patience=5,
+        should_evaluation_execute_mcts=True,
         competitions_num=250,
         competition_margin=0.1,
         play_config=evaluation_play_config,
@@ -90,8 +92,8 @@ def main():
 
     # Training and evaluating.
     evaluate(
-        dummy_model,
-        mnk_network.get_best_model(),
+        (dummy_model, ModelConfig()),  # Always execute MCTS for the dummy model
+        (mnk_network.get_best_model(), ModelConfig(should_execute_mcts=mnk_config.should_evaluation_execute_mcts)),
         mnk_game,
         mnk_config.competitions_num,
         mnk_config.play_config,
