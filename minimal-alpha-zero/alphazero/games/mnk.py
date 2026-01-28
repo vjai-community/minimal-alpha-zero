@@ -126,13 +126,13 @@ class MnkGame(Game):
     #   y
     #   | . . . . . . .
     #   | . . . . . . .
-    # m | . . . . . . .
+    # n | . . . . . . .
     #   | . . . . . . .
     #   | . . . . . . .
     #     - - - - - - - x
-    #           n
-    m: int  # Number of rows
-    n: int  # Number of columns
+    #           m
+    m: int  # Number of columns
+    n: int  # Number of rows
     k: int  # Number of stones to connect
     initial_stones_num: int
 
@@ -144,10 +144,10 @@ class MnkGame(Game):
 
     def begin(self) -> MnkState:
         """ """
-        state = MnkState([[None for _ in range(self.n)] for _ in range(self.m)], 0, None)
+        state = MnkState([[None for _ in range(self.m)] for _ in range(self.n)], 0, None)
         if self.initial_stones_num == 0:
             return state
-        positions = [(x, y) for y in range(self.m) for x in range(self.n)]
+        positions = [(x, y) for y in range(self.n) for x in range(self.m)]
         initial_stones_num = self.initial_stones_num
         if initial_stones_num % 2 != 0:
             initial_stones_num += 1  # Should be an even number
@@ -158,7 +158,7 @@ class MnkGame(Game):
 
     def list_all_actions(self) -> list[MnkAction]:
         """ """
-        return [MnkAction(x, y) for y in range(self.m) for x in range(self.n)]
+        return [MnkAction(x, y) for y in range(self.n) for x in range(self.m)]
 
     def list_legal_actions(self, state: MnkState) -> list[MnkAction]:
         """ """
@@ -207,21 +207,21 @@ class MnkGame(Game):
         # Check rows containing the last action. Only consider stones of the same color as the last move.
         m, n, k = self.m, self.n, self.k
         ## The horizontal row.
-        row = [state.board[last_y][x] for x in range(n)]
+        row = [state.board[last_y][x] for x in range(m)]
         if self._check_consecutive_stones(row, last_color, k):
             return 1.0
         ## The vertical row.
-        row = [state.board[y][last_x] for y in range(m)]
+        row = [state.board[y][last_x] for y in range(n)]
         if self._check_consecutive_stones(row, last_color, k):
             return 1.0
         ## The upward diagonal row.
         left_x, left_y = (last_x - last_y, 0) if last_x >= last_y else (0, last_y - last_x)
-        row = [state.board[left_y + i][left_x + i] for i in range(min(m - left_y, n - left_x))]
+        row = [state.board[left_y + i][left_x + i] for i in range(min(n - left_y, m - left_x))]
         if self._check_consecutive_stones(row, last_color, k):
             return 1.0
         ## The downward diagonal row.
-        left_x, left_y = (last_x - (m - 1 - last_y), m - 1) if last_x >= m - 1 - last_y else (0, last_y + last_x)
-        row = [state.board[left_y - i][left_x + i] for i in range(min(left_y + 1, n - left_x))]
+        left_x, left_y = (last_x - (n - 1 - last_y), n - 1) if last_x >= n - 1 - last_y else (0, last_y + last_x)
+        row = [state.board[left_y - i][left_x + i] for i in range(min(left_y + 1, m - left_x))]
         if self._check_consecutive_stones(row, last_color, k):
             return 1.0
         # Declare a draw if the board is full. Otherwise, it is not in a terminal state.
@@ -280,16 +280,16 @@ class MnkModel(nnx.Module, NamedModel):
         """ """
         self.eval()  # Switch to eval mode
         x = jnp.array(input_data.board_data)
-        m, n = x.shape  # Fortunately, the action space has the same total size as the input data shape
+        n, m = x.shape  # Fortunately, the action space has the same total size as the input data shape
         x = x.reshape((1, *x.shape, MnkModel.INPUT_CHANNEL))
         prior_probabilities_output, value_output = self(x)
         prior_probabilities: dict[MnkAction, float] = {}
         prior_probabilities_output = nn.softmax(prior_probabilities_output[0])
-        for y in range(m):
-            for x in range(n):
+        for y in range(n):
+            for x in range(m):
                 # Use the same layout as `MnkGame.list_all_actions` method to ensure the same action order.
                 # Please refer to `..core.network.Model` class for details.
-                prior_probabilities[MnkAction(x, y)] = prior_probabilities_output[y * n + x].item()
+                prior_probabilities[MnkAction(x, y)] = prior_probabilities_output[y * m + x].item()
         value: float = value_output.item()
         return prior_probabilities, value
 
@@ -297,8 +297,8 @@ class MnkModel(nnx.Module, NamedModel):
 class DummyModel(NamedModel):
     """ """
 
-    m: int  # Number of rows
-    n: int  # Number of columns
+    m: int  # Number of columns
+    n: int  # Number of rows
 
     def __init__(self, m: int, n: int):
         self.m = m
@@ -308,7 +308,7 @@ class DummyModel(NamedModel):
     def predict_single(self, input_data: MnkInputData) -> tuple[dict[MnkAction, float], float]:
         """ """
         m, n = self.m, self.n
-        prior_probabilities = {MnkAction(x, y): 1.0 / (m * n) for y in range(m) for x in range(n)}
+        prior_probabilities = {MnkAction(x, y): 1.0 / (m * n) for y in range(n) for x in range(m)}
         value = 0.0
         return prior_probabilities, value
 
@@ -350,8 +350,8 @@ class MnkConfig:
 class MnkNetwork(Network):
     """ """
 
-    m: int  # Number of rows
-    n: int  # Number of columns
+    m: int  # Number of columns
+    n: int  # Number of rows
     best_model: MnkModel
     config: MnkConfig
 
@@ -530,8 +530,8 @@ def evaluate(
                         f"Model: {model1.name if is_model1_first_mover == is_in_red_turn else model2.name} "
                         + f"({(StoneColor.RED if is_in_red_turn else StoneColor.GREEN).get_mark()})\n"
                     )
-                    competition_file.write(f"Prior probabilities:\n{format_board(prior_probabilities, game.n)}\n")
-                    competition_file.write(f"Search probabilities:\n{format_board(search_probabilities, game.n)}\n")
+                    competition_file.write(f"Prior probabilities:\n{format_board(prior_probabilities, game.m)}\n")
+                    competition_file.write(f"Search probabilities:\n{format_board(search_probabilities, game.m)}\n")
                     competition_file.write(f"Value: {value:.2f}\n")
                     competition_file.write("\n")
                 competition_file.write(f"{last_state}\n")
@@ -551,10 +551,10 @@ def evaluate(
     return result
 
 
-def format_board(flattened_board: list[float], n: int) -> str:
+def format_board(flattened_board: list[float], m: int) -> str:
     """ """
     board_str = ""
-    board = [flattened_board[i : i + n] for i in range(0, len(flattened_board), n)]
+    board = [flattened_board[i : i + m] for i in range(0, len(flattened_board), m)]
     for y, row in enumerate(reversed(board)):  # Print rows from top to bottom
         for value in row:
             board_str += f"{value:.2f} " if value != 0.0 else "____ "
@@ -568,8 +568,8 @@ def augment_data(data: tuple[MnkState, list[float], float]) -> dict[str, tuple[M
     Leverage the symmetry of the board to augment data by applying dihedral reflections or rotations.
     """
     state, probabilities, reward = data
-    m = len(state.board)
-    n = len(state.board[0])
+    n = len(state.board)
+    m = len(state.board[0])
 
     def _flip_state_vertically(state: MnkState) -> MnkState:
         """ """
@@ -579,7 +579,7 @@ def augment_data(data: tuple[MnkState, list[float], float]) -> dict[str, tuple[M
             new_board.append(new_row)
         new_last_action = None
         if state.last_action is not None:
-            new_last_action = MnkAction(state.last_action.x, m - 1 - state.last_action.y)
+            new_last_action = MnkAction(state.last_action.x, n - 1 - state.last_action.y)
         new_state = MnkState(new_board, state.stone_count, new_last_action)
         return new_state
 
@@ -591,7 +591,7 @@ def augment_data(data: tuple[MnkState, list[float], float]) -> dict[str, tuple[M
             new_board.append(new_row)
         new_last_action = None
         if state.last_action is not None:
-            new_last_action = MnkAction(n - 1 - state.last_action.x, state.last_action.y)
+            new_last_action = MnkAction(m - 1 - state.last_action.x, state.last_action.y)
         new_state = MnkState(new_board, state.stone_count, new_last_action)
         return new_state
 
@@ -603,7 +603,7 @@ def augment_data(data: tuple[MnkState, list[float], float]) -> dict[str, tuple[M
             new_board.append(new_row)
         new_last_action = None
         if state.last_action is not None:
-            new_last_action = MnkAction(n - 1 - state.last_action.x, m - 1 - state.last_action.y)
+            new_last_action = MnkAction(m - 1 - state.last_action.x, n - 1 - state.last_action.y)
         new_state = MnkState(new_board, state.stone_count, new_last_action)
         return new_state
 
@@ -613,24 +613,24 @@ def augment_data(data: tuple[MnkState, list[float], float]) -> dict[str, tuple[M
     def _flip_probabilities_vertically(probabilities: list[float]) -> list[float]:
         """ """
         new_probabilities: list[float] = []
-        for y in reversed(range(m)):
-            new_row = [probabilities[y * n + x] for x in range(n)]
+        for y in reversed(range(n)):
+            new_row = [probabilities[y * m + x] for x in range(m)]
             new_probabilities += new_row
         return new_probabilities
 
     def _flip_probabilities_horizontally(probabilities: list[float]) -> list[float]:
         """ """
         new_probabilities: list[float] = []
-        for y in range(m):
-            new_row = [probabilities[y * n + x] for x in reversed(range(n))]
+        for y in range(n):
+            new_row = [probabilities[y * m + x] for x in reversed(range(m))]
             new_probabilities += new_row
         return new_probabilities
 
     def _flip_probabilities_centrally(probabilities: list[float]) -> list[float]:
         """ """
         new_probabilities: list[float] = []
-        for y in reversed(range(m)):
-            new_row = [probabilities[y * n + x] for x in reversed(range(n))]
+        for y in reversed(range(n)):
+            new_row = [probabilities[y * m + x] for x in reversed(range(m))]
             new_probabilities += new_row
         return new_probabilities
 

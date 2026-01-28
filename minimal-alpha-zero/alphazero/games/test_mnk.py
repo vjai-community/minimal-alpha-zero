@@ -23,9 +23,9 @@ class TestMnk:
         green_count = 0
         board: list[list[Optional[Stone]]] = []
         actions: list[MnkAction] = []
-        for y in range(m):
+        for y in range(n):
             row: list[Optional[Stone]] = []
-            for x in range(n):
+            for x in range(m):
                 color = random.choice([StoneColor.RED, StoneColor.GREEN, None])
                 row.append(Stone(color) if color is not None else None)
                 if color is not None:
@@ -37,10 +37,10 @@ class TestMnk:
             board.append(row)
         state = MnkState(board, red_count + green_count, random.choice(actions))
         # Simulate a new state.
-        new_action = MnkAction(random.randint(0, n - 1), random.randint(0, m - 1))
+        new_action = MnkAction(random.randint(0, m - 1), random.randint(0, n - 1))
         new_state = mnk_game.simulate(state, new_action)
-        for y in range(m):
-            for x in range(n):
+        for y in range(n):
+            for x in range(m):
                 if x != new_action.x or y != new_action.y or state.board[y][x] is not None:
                     assert (
                         new_state.board[y][x] is None
