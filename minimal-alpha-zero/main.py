@@ -10,7 +10,15 @@ from flax import nnx
 
 from alphazero.core.game import ReplayBuffer
 from alphazero.core.generator import PlayConfig, NoiseSession, generate_data
-from alphazero.games.mnk import MnkGame, MnkConfig, MnkNetwork, DummyModel, evaluate, EVALUATION_DUMMY_BEST_DIR_NAME
+from alphazero.games.mnk import (
+    MnkGame,
+    MnkConfig,
+    MnkNetwork,
+    DummyModel,
+    evaluate,
+    format_board,
+    EVALUATION_DUMMY_BEST_DIR_NAME,
+)
 
 
 STORAGE_DIR = pathlib.Path(__file__).parent.parent / "storage"
@@ -39,6 +47,7 @@ def main():
 
     # Initialize the game.
     c_puct = 2.0  # TODO: Tune this hyperparameter
+    self_plays_num = 250
     mnk_game = MnkGame(m, n, k)
     training_play_config = PlayConfig(
         simulations_num=m * n * 5,
@@ -65,7 +74,7 @@ def main():
         rngs=rngs,
     )
     mnk_network = MnkNetwork(m, n, mnk_config)
-    replay_buffer = ReplayBuffer(8192)
+    replay_buffer = ReplayBuffer(self_plays_num * 128)
     dummy_model = DummyModel(m, n)
 
     # Training and evaluating.
@@ -79,20 +88,30 @@ def main():
     )
     for i in range(ITERATIONS_NUM):
         logger.info(f"iteration_index={i:0{len(str(ITERATIONS_NUM))}d}")
-        for data in generate_data(
+        output_dir = run_dir / f"iteration_{i:0{len(str(ITERATIONS_NUM))}d}"
+        data_output_dir = output_dir / "data"
+        os.makedirs(data_output_dir, exist_ok=True)
+        j = 0
+        for data_list in generate_data(
             mnk_game,
             mnk_network.get_best_model(),
-            1000,
+            self_plays_num,
             training_play_config,
             noise_session=noise_session,
         ):
-            replay_buffer.append(data)
+            # Store and log the training data.
+            with open(data_output_dir / f"self_play-{j:0{len(str(self_plays_num))}d}.txt", "w") as data_file:
+                for data in data_list:
+                    replay_buffer.append(data)
+                    state, search_probabilities, reward = data
+                    data_file.write(f"{state}\n")
+                    data_file.write(f"Search probabilities:\n{format_board(search_probabilities, n)}\n")
+                    data_file.write(f"Reward: {reward}\n")
+                    data_file.write("\n")
+                    data_file.flush()
+            j += 1
         logger.info(f"replay_buffer_len={len(replay_buffer.buffer)}")
-        is_best_model_updated = mnk_network.train_and_evaluate(
-            replay_buffer,
-            mnk_game,
-            run_dir / f"iteration_{i:0{len(str(ITERATIONS_NUM))}d}",
-        )
+        is_best_model_updated = mnk_network.train_and_evaluate(replay_buffer, mnk_game, output_dir)
         # Clear the replay buffer after updating the best model.
         if is_best_model_updated:
             replay_buffer.reset()

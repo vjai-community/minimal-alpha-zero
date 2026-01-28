@@ -462,17 +462,6 @@ def evaluate(
         result = -1.0 if is_model1_last_mover == (reward > 0) else 1.0
         return last_state, moves, result
 
-    def _format_board(flattened_board: list[float]) -> str:
-        """ """
-        board_str = ""
-        board = [flattened_board[i : i + game.n] for i in range(0, len(flattened_board), game.n)]
-        for y, row in enumerate(reversed(board)):  # Print rows from top to bottom
-            for value in row:
-                board_str += f"{value:.2f} " if value != 0.0 else "____ "
-            if y < len(board) - 1:
-                board_str += "\n"
-        return board_str
-
     if output_dir is not None:
         os.makedirs(output_dir, exist_ok=True)
     result = 0.0
@@ -499,8 +488,8 @@ def evaluate(
                         f"Model: {model1.name if is_model1_first_mover == is_in_red_turn else model2.name} "
                         + f"({(StoneColor.RED if is_in_red_turn else StoneColor.GREEN).get_mark()})\n"
                     )
-                    competition_file.write(f"Prior probabilities:\n{_format_board(prior_probabilities)}\n")
-                    competition_file.write(f"Search probabilities:\n{_format_board(search_probabilities)}\n")
+                    competition_file.write(f"Prior probabilities:\n{format_board(prior_probabilities, game.n)}\n")
+                    competition_file.write(f"Search probabilities:\n{format_board(search_probabilities, game.n)}\n")
                     competition_file.write(f"Value: {value:.2f}\n")
                     competition_file.write("\n")
                 competition_file.write(f"{last_state}\n")
@@ -518,3 +507,15 @@ def evaluate(
             result_file.write(f"model1={model1.name}, model2={model2.name}, result={result}\n")
     logger.info(f"model1={model1.name}, model2={model2.name}, result={result}")
     return result
+
+
+def format_board(flattened_board: list[float], n: int) -> str:
+    """ """
+    board_str = ""
+    board = [flattened_board[i : i + n] for i in range(0, len(flattened_board), n)]
+    for y, row in enumerate(reversed(board)):  # Print rows from top to bottom
+        for value in row:
+            board_str += f"{value:.2f} " if value != 0.0 else "____ "
+        if y < len(board) - 1:
+            board_str += "\n"
+    return board_str
