@@ -49,7 +49,7 @@ def main():
     # Training and evaluating.
     result = evaluate(
         dummy_model,
-        mnk_network.best_model,
+        mnk_network.get_best_model(),
         mnk_game,
         mnk_config.competitions_num,
         mnk_config.select_simulations_num,
@@ -60,14 +60,16 @@ def main():
         logger.info(f"iteration_index={i}")
         for data in generate_data(
             mnk_game,
-            mnk_network.best_model,
+            mnk_network.get_best_model(),
             self_plays_num=1000,
             self_play_select_simulations_num=select_simulations_num,
         ):
             replay_buffer.append(data)
         logger.info(f"replay_buffer_len={len(replay_buffer.buffer)}")
-        mnk_network.train_and_evaluate(replay_buffer, mnk_game)
-        # TODO: Consider clearing the replay buffer after updating the model weights.
+        is_best_model_updated = mnk_network.train_and_evaluate(replay_buffer, mnk_game)
+        # Clear the replay buffer after updating the best model.
+        if is_best_model_updated:
+            replay_buffer.reset()
 
 
 if __name__ == "__main__":

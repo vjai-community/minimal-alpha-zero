@@ -339,7 +339,7 @@ class MnkNetwork(Network):
         self.best_model = MnkModel(m, n, config.rngs)
         self.config = config
 
-    def train_and_evaluate(self, replay_buffer: ReplayBuffer, game: MnkGame):
+    def train_and_evaluate(self, replay_buffer: ReplayBuffer, game: MnkGame) -> bool:
         """ """
         # Train a new candidate model.
         candidate_model = nnx.clone(self.best_model)
@@ -361,7 +361,9 @@ class MnkNetwork(Network):
             self.config.select_temperature,
         )
         logger.info(f"model1=best_model, model2=candidate_model, result={result}")
+        is_best_model_updated = False
         if result > 0 and abs(result) > self.config.competition_margin:
+            is_best_model_updated = True
             # The candidate model becomes the new best model.
             self.best_model = candidate_model
             dummy_model = DummyModel(self.m, self.n)
@@ -374,6 +376,12 @@ class MnkNetwork(Network):
                 self.config.select_temperature,
             )
             logger.info(f"model1=dummy_model, model2=best_model, result={result}")
+        return is_best_model_updated
+
+    def get_best_model(self) -> MnkModel:
+        """ """
+        self.best_model.eval()  # Switch to eval mode
+        return self.best_model
 
     @staticmethod
     def _train_one_epoch(
