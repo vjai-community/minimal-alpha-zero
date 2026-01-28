@@ -1,0 +1,4 @@
+FROM python:3.14.2-trixie
+
+# Install uv
+RUN curl -LsSf https://astral.sh/uv/0.9.21/install.sh | sh
