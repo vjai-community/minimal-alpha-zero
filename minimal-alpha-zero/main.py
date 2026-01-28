@@ -1,4 +1,6 @@
+import datetime
 import logging
+import os
 import pathlib
 import random
 import time
@@ -7,7 +9,7 @@ from flax import nnx
 
 from alphazero.core.game import ReplayBuffer
 from alphazero.core.generator import generate_data
-from alphazero.games.mnk import MnkGame, MnkConfig, MnkNetwork, DummyModel, evaluate
+from alphazero.games.mnk import MnkGame, MnkConfig, MnkNetwork, DummyModel, evaluate, EVALUATION_DUMMY_BEST_DIR_NAME
 
 
 STORAGE_DIR = pathlib.Path(__file__).parent.parent / "storage"
@@ -25,9 +27,14 @@ def main():
     # consider choosing: m, n, k = (5, 5, 4)
     select_simulations_num = m * n * 2
     seed = int(time.time() * 1000)
-    logger.info(f"seed={seed}")
+    run_time = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    logger.info(f"seed={seed}, run_time={run_time}")
     random.seed(seed)
     rngs = nnx.Rngs(seed)
+    run_dir = STORAGE_DIR / run_time
+    os.makedirs(run_dir, exist_ok=True)
+    with open(run_dir / "config.log", "w") as config_file:
+        config_file.write(f"seed={seed}\n")
 
     # Initialize the game.
     mnk_game = MnkGame(m, n, k)
@@ -39,7 +46,6 @@ def main():
         competition_margin=0.1,
         select_simulations_num=select_simulations_num,
         select_temperature=0.1,
-        model_dir=STORAGE_DIR / "model",
         rngs=rngs,
     )
     mnk_network = MnkNetwork(m, n, mnk_config)
@@ -47,17 +53,17 @@ def main():
     dummy_model = DummyModel(m, n)
 
     # Training and evaluating.
-    result = evaluate(
+    evaluate(
         dummy_model,
         mnk_network.get_best_model(),
         mnk_game,
         mnk_config.competitions_num,
         mnk_config.select_simulations_num,
         mnk_config.select_temperature,
+        output_dir=run_dir / "initial" / EVALUATION_DUMMY_BEST_DIR_NAME,
     )
-    logger.info(f"model1=dummy_model, model2=best_model, result={result}")
     for i in range(ITERATIONS_NUM):
-        logger.info(f"iteration_index={i}")
+        logger.info(f"iteration_index={i:0{len(str(ITERATIONS_NUM))}d}")
         for data in generate_data(
             mnk_game,
             mnk_network.get_best_model(),
@@ -66,7 +72,11 @@ def main():
         ):
             replay_buffer.append(data)
         logger.info(f"replay_buffer_len={len(replay_buffer.buffer)}")
-        is_best_model_updated = mnk_network.train_and_evaluate(replay_buffer, mnk_game)
+        is_best_model_updated = mnk_network.train_and_evaluate(
+            replay_buffer,
+            mnk_game,
+            run_dir / f"iteration_{i:0{len(str(ITERATIONS_NUM))}d}",
+        )
         # Clear the replay buffer after updating the best model.
         if is_best_model_updated:
             replay_buffer.reset()

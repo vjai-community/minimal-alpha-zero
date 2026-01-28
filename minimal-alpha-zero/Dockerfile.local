@@ -1,5 +1,7 @@
 # Cannot use Python 3.14 yet due to an incompatibility issue (see: https://github.com/google/flax/issues/5027)
 FROM python:3.13.11-trixie
 
+ENV TZ=Asia/Tokyo
+
 # Install uv
 RUN curl -LsSf https://astral.sh/uv/0.9.21/install.sh | sh

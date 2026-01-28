@@ -1,3 +1,4 @@
+import os
 from abc import ABC, abstractmethod
 
 from .game import Action, InputData, Game, ReplayBuffer
@@ -36,7 +37,7 @@ class Network(ABC):
     """ """
 
     @abstractmethod
-    def train_and_evaluate(self, replay_buffer: ReplayBuffer, game: Game) -> bool:
+    def train_and_evaluate(self, replay_buffer: ReplayBuffer, game: Game, output_dir: os.PathLike) -> bool:
         """
         Train and evaluate models to choose the best for generating new data.
         Return `True` if the previous best model has been updated with new weights.

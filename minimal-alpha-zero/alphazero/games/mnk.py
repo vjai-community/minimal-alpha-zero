@@ -5,6 +5,7 @@ Please read https://en.wikipedia.org/wiki/M,n,k-game, I'm too lazy to write the 
 import logging
 import os
 import random
+from abc import ABC
 from enum import Enum
 from typing import Optional
 
@@ -17,14 +18,27 @@ from ..core.network import Model, Network
 from ..core.generator import play
 
 
+EVALUATION_DUMMY_BEST_DIR_NAME = "evaluation-dummy-best"
+EVALUATION_BEST_CANDIDATE_DIR_NAME = "evaluation-best-candidate"
 logger = logging.getLogger(__name__)
 
 
 class StoneColor(Enum):
     """ """
 
-    RED = 1
-    GREEN = -1
+    RED = (-1, "x")
+    GREEN = (1, "o")
+
+    _mark: str
+
+    def __new__(cls, value: int, mark: str):
+        obj = object.__new__(cls)
+        obj._value_ = value
+        obj._mark = mark
+        return obj
+
+    def get_mark(self, is_last_stone: bool = False) -> str:
+        return self._mark if not is_last_stone else self._mark.upper()
 
 
 class Stone:
@@ -97,10 +111,8 @@ class MnkState(State):
                 is_last_stone = False
                 if self.last_action is not None:
                     is_last_stone = x == self.last_action.x and y == len(self.board) - 1 - self.last_action.y
-                if is_last_stone:
-                    board_str += "\033[1m"
-                board_str += "." if stone is None else "\033[31mX" if stone.color == StoneColor.RED else "\033[32mO"
-                board_str += "\033[0m "
+                board_str += "." if stone is None else stone.color.get_mark(is_last_stone=is_last_stone)
+                board_str += " "
             if y < len(self.board) - 1:
                 board_str += "\n"
         return board_str
@@ -228,7 +240,16 @@ class MnkGame(Game):
         return False
 
 
-class MnkModel(nnx.Module, Model):
+class NamedModel(Model, ABC):
+    """ """
+
+    name: str  # Mainly used for debugging
+
+    def set_name(self, name: str):
+        self.name = name
+
+
+class MnkModel(nnx.Module, NamedModel):
     """ """
 
     INPUT_CHANNEL = 1
@@ -270,7 +291,7 @@ class MnkModel(nnx.Module, Model):
         return prior_probabilities, value
 
 
-class DummyModel(Model):
+class DummyModel(NamedModel):
     """ """
 
     m: int  # Number of rows
@@ -279,6 +300,7 @@ class DummyModel(Model):
     def __init__(self, m: int, n: int):
         self.m = m
         self.n = n
+        self.name = "dummy"
 
     def predict_single(self, input_data: MnkInputData) -> tuple[dict[MnkAction, float], float]:
         """ """
@@ -298,7 +320,6 @@ class MnkConfig:
     competition_margin: float  # Should be positive and less than 1
     select_simulations_num: int
     select_temperature: float
-    model_dir: Optional[os.PathLike]
     rngs: nnx.Rngs
 
     def __init__(
@@ -311,7 +332,6 @@ class MnkConfig:
         competition_margin: float,
         select_simulations_num: int,
         select_temperature: float,
-        model_dir: os.PathLike = None,
         rngs: nnx.Rngs = nnx.Rngs(0),
     ):
         self.learning_rate = learning_rate
@@ -321,7 +341,6 @@ class MnkConfig:
         self.competition_margin = competition_margin
         self.select_simulations_num = select_simulations_num
         self.select_temperature = select_temperature
-        self.model_dir = model_dir
         self.rngs = rngs
 
 
@@ -337,12 +356,14 @@ class MnkNetwork(Network):
         self.m = m
         self.n = n
         self.best_model = MnkModel(m, n, config.rngs)
+        self.best_model.set_name("best")
         self.config = config
 
-    def train_and_evaluate(self, replay_buffer: ReplayBuffer, game: MnkGame) -> bool:
+    def train_and_evaluate(self, replay_buffer: ReplayBuffer, game: MnkGame, output_dir: os.PathLike) -> bool:
         """ """
         # Train a new candidate model.
         candidate_model = nnx.clone(self.best_model)
+        candidate_model.set_name("candidate")
         candidate_model.train()  # Switch to train mode
         optimizer = nnx.Optimizer(candidate_model, optax.adamw(self.config.learning_rate), wrt=nnx.Param)
         metric = nnx.MultiMetric(loss=nnx.metrics.Average("loss"))
@@ -359,23 +380,24 @@ class MnkNetwork(Network):
             self.config.competitions_num,
             self.config.select_simulations_num,
             self.config.select_temperature,
+            output_dir=output_dir / EVALUATION_BEST_CANDIDATE_DIR_NAME,
         )
-        logger.info(f"model1=best_model, model2=candidate_model, result={result}")
         is_best_model_updated = False
         if result > 0 and abs(result) > self.config.competition_margin:
             is_best_model_updated = True
             # The candidate model becomes the new best model.
             self.best_model = candidate_model
+            self.best_model.set_name("best")
             dummy_model = DummyModel(self.m, self.n)
-            result = evaluate(
+            evaluate(
                 dummy_model,
                 self.best_model,
                 game,
                 self.config.competitions_num,
                 self.config.select_simulations_num,
                 self.config.select_temperature,
+                output_dir=output_dir / EVALUATION_DUMMY_BEST_DIR_NAME,
             )
-            logger.info(f"model1=dummy_model, model2=best_model, result={result}")
         return is_best_model_updated
 
     def get_best_model(self) -> MnkModel:
@@ -417,37 +439,91 @@ class MnkNetwork(Network):
 
 
 def evaluate(
-    model1: MnkModel,
-    model2: MnkModel,
+    model1: NamedModel,
+    model2: NamedModel,
     game: MnkGame,
     competitions_num: int,
     select_simulations_num: int,
     select_temperature: float,
+    output_dir: Optional[os.PathLike] = None,
 ) -> float:
     """
     Return a result close to -1 if `model1` is better, and close to 1 if `model2` is better.
     """
 
-    def _compete_one_game(model1: MnkModel, model2: MnkModel) -> float:
+    def _compete_one_game(
+        model1: Model, model2: Model
+    ) -> tuple[State, list[tuple[State, list[float], list[float], float]], float]:
         """
         Have two models play a game and choose the better one based on the reward.
         Return -1 if `model1` wins, 1 if `model2` wins, `0` for a draw.
         NOTE: `model1` always moves first.
         """
-        _, moves, reward = play(game, [model1, model2], select_simulations_num, select_temperature=select_temperature)
+        last_state, moves, reward = play(
+            game,
+            [model1, model2],
+            select_simulations_num,
+            select_temperature=select_temperature,
+        )
         is_model1_last_mover = len(moves) % 2 == 1
         if reward == 0.0:
-            return 0.0
+            return last_state, moves, 0.0
         result = -1.0 if is_model1_last_mover == (reward > 0) else 1.0
-        return result
+        return last_state, moves, result
 
+    def _format_board(flattened_board: list[float]) -> str:
+        """ """
+        board_str = ""
+        board = [flattened_board[i : i + game.n] for i in range(0, len(flattened_board), game.n)]
+        for y, row in enumerate(reversed(board)):  # Print rows from top to bottom
+            for value in row:
+                board_str += f"{value:.2f} " if value != 0.0 else "____ "
+            if y < len(board) - 1:
+                board_str += "\n"
+        return board_str
+
+    if output_dir is not None:
+        os.makedirs(output_dir, exist_ok=True)
     result = 0.0
     for i in range(competitions_num):
         is_model1_first_mover = i % 2 == 0
+        last_state: State
+        moves: list[tuple[State, list[float], list[float], float]]
+        cur_result: float
         # Two models take turns having the first move in each competition.
         if is_model1_first_mover:
-            result += _compete_one_game(model1, model2)
+            last_state, moves, cur_result = _compete_one_game(model1, model2)
+            result += cur_result
         else:
-            result -= _compete_one_game(model2, model1)
+            last_state, moves, cur_result = _compete_one_game(model2, model1)
+            result -= cur_result
+        # Log the moves.
+        if output_dir is not None:
+            competition_file_path = output_dir / f"competition-{i:0{len(str(competitions_num))}d}.txt"
+            with open(competition_file_path, "w") as competition_file:
+                for j, (state, prior_probabilities, search_probabilities, value) in enumerate(moves):
+                    is_in_red_turn = j % 2 == 0  # Red always moves first. Ref: `MnkGame.simulate` method.
+                    competition_file.write(f"{state}\n")
+                    competition_file.write(
+                        f"Model: {model1.name if is_model1_first_mover == is_in_red_turn else model2.name} "
+                        + f"({(StoneColor.RED if is_in_red_turn else StoneColor.GREEN).get_mark()})\n"
+                    )
+                    competition_file.write(f"Prior probabilities:\n{_format_board(prior_probabilities)}\n")
+                    competition_file.write(f"Search probabilities:\n{_format_board(search_probabilities)}\n")
+                    competition_file.write(f"Value: {value:.2f}\n")
+                    competition_file.write("\n")
+                competition_file.write(f"{last_state}\n")
+                competition_file.write("\n")
+                competition_file.write(
+                    "Draw"
+                    if cur_result == 0.0
+                    else f"Winner: {model1.name if is_model1_first_mover == (cur_result < 0) else model2.name}"
+                )
+                competition_file.write("\n")
     result /= competitions_num
+    # Log the result.
+    if output_dir is not None:
+        with open(output_dir / "@result.txt", "w") as result_file:
+            result_file.write(f"model1={model1.name}, model2={model2.name}, result={result}\n")
+    logger.info(f"model1={model1.name}, model2={model2.name}, result={result}")
     return result
