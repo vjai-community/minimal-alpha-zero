@@ -138,7 +138,7 @@ def main():
                         replay_buffer.append(data)
                         state, search_probabilities, reward = data
                         data_file.write(f"{state}\n")
-                        data_file.write(f"Search probabilities:\n{format_board(search_probabilities, n)}\n")
+                        data_file.write(f"Search probabilities:\n{format_board(search_probabilities, m)}\n")
                         data_file.write(f"Reward: {reward}\n")
                         data_file.write("\n")
                         data_file.flush()
