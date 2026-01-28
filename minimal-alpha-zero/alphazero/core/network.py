@@ -36,7 +36,12 @@ class Network(ABC):
     """ """
 
     @abstractmethod
-    def train_and_evaluate(self, replay_buffer: ReplayBuffer, game: Game):
+    def train_and_evaluate(self, replay_buffer: ReplayBuffer, game: Game) -> bool:
         """
         Train and evaluate models to choose the best for generating new data.
+        Return `True` if the previous best model has been updated with new weights.
         """
+
+    @abstractmethod
+    def get_best_model(self) -> Model:
+        """ """
