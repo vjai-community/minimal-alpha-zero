@@ -83,15 +83,15 @@ class ReplayBuffer:
     # NOTE: The "probabilities" stored in the replay buffer are referred to as "search probabilities" when generating data,
     # and as "improved probabilities" during training; they are interchangeable.
     buffer: list[tuple[State, list[float], float]]
-    buffer_size: int
+    buffer_size: Optional[int]
 
-    def __init__(self, buffer_size: int):
+    def __init__(self, buffer_size: Optional[int] = None):
         self.buffer = []
         self.buffer_size = buffer_size
 
     def append(self, data: tuple[State, list[float], float]):
         """ """
-        if len(self.buffer) >= self.buffer_size:
+        if self.buffer_size is not None and len(self.buffer) >= self.buffer_size:
             self.buffer.pop(0)
         self.buffer.append(data)
 
