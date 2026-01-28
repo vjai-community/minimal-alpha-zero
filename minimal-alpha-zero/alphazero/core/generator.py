@@ -66,7 +66,7 @@ def generate_data(
         if len(moves) == 0 or reward is None:
             # Just in case.
             continue
-        for j, (state, search_probabilities) in enumerate(moves):
+        for j, (state, _, search_probabilities, _) in enumerate(moves):
             # The sign of reward for each move (positive or negative) alternates based on current player's perspective,
             # since two players take turns: Player A moves first, Player B moves second, then Player A again, and so on.
             # It also depends on which player makes the last move and whether that player wins or loses.
@@ -85,7 +85,7 @@ def play(
     models: list[Model],
     select_simulations_num: int,
     select_temperature: float = 1.0,  # TODO: Tune this hyperparameter
-) -> tuple[State, list[tuple[State, list[float]]], float]:
+) -> tuple[State, list[tuple[State, list[float], list[float], float]], float]:
     """
     Play a game with multiple players.
     Each player (model) takes turns in order based on its index in the list.
@@ -98,7 +98,7 @@ def play(
     # but since this approach is inefficient, we store the list of existing states in `state_caches` variable for faster checking.
     state_caches: list[dict[State, Node]] = [{} for _ in range(len(models))]
     node = Node(game.begin())
-    moves: list[tuple[State, list[float]]] = []
+    moves: list[tuple[State, list[float], list[float], float]] = []
     reward = 0.0
     i = 0
     while True:
@@ -118,8 +118,9 @@ def play(
             select_simulations_num,
             select_temperature,
         )
+        prior_probabilities = [node.children[a].prior_probability if a in node.children else 0.0 for a in all_actions]
         search_probabilities = [legal_searches[a] if a in legal_searches else 0.0 for a in all_actions]
-        moves.append((node.state, search_probabilities))
+        moves.append((node.state, prior_probabilities, search_probabilities, node.value))
         # Move to the next model and next node.
         i += 1
         state = node.children[action].node.state
