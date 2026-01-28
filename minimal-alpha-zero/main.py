@@ -47,7 +47,7 @@ def main():
         config_file.write(f"seed={seed}\n")
 
     # Initialize the game.
-    def _calculate_temperature(move_index: int) -> float:
+    def _calc_temperature(move_index: int) -> float:
         """ """
         MAX_TEMPERATURE = 1.0
         MIN_TEMPERATURE = 0.1
@@ -58,14 +58,14 @@ def main():
     training_play_config = PlayConfig(
         simulations_num=m * n * 5,
         c_puct=c_puct,
-        calculate_temperature=_calculate_temperature,  # TODO: Tune this hyperparameter
+        calc_temperature=_calc_temperature,  # TODO: Tune this hyperparameter
     )
     evaluation_play_config = PlayConfig(
         simulations_num=m * n * 5,
         c_puct=c_puct,
         # Keep a high temperature for the first two moves (one move per turn for each player),
         # then lower the temperature for the rest to achieve stronger play.
-        calculate_temperature=lambda i: 1.0 if i <= 1 else 0.1,
+        calc_temperature=lambda i: 1.0 if i <= 1 else 0.1,
     )
     mnk_game = MnkGame(m, n, k)
     mnk_config = MnkConfig(
@@ -120,9 +120,9 @@ def main():
                         [original_data_file, vertical_data_file, horizontal_data_file, central_data_file],
                     ):
                         replay_buffer.append(data)
-                        state, search_probabilities, reward = data
+                        state, search_probs, reward = data
                         data_file.write(f"{state}\n")
-                        data_file.write(f"Search probabilities:\n{format_board(search_probabilities, m)}\n")
+                        data_file.write(f"Search probabilities:\n{format_board(search_probs, m)}\n")
                         data_file.write(f"Reward: {reward}\n")
                         data_file.write("\n")
                         data_file.flush()
