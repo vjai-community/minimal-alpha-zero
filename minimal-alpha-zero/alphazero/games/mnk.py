@@ -561,3 +561,83 @@ def format_board(flattened_board: list[float], n: int) -> str:
         if y < len(board) - 1:
             board_str += "\n"
     return board_str
+
+
+def augment_data(data: tuple[MnkState, list[float], float]) -> dict[str, tuple[MnkState, list[float], float]]:
+    """
+    Leverage the symmetry of the board to augment data by applying dihedral reflections or rotations.
+    """
+    state, probabilities, reward = data
+    m = len(state.board)
+    n = len(state.board[0])
+
+    def _flip_state_vertically(state: MnkState) -> MnkState:
+        """ """
+        new_board: list[list[Optional[Stone]]] = []
+        for row in reversed(state.board):
+            new_row = [Stone(s.color) if s is not None else None for s in row]
+            new_board.append(new_row)
+        new_last_action = None
+        if state.last_action is not None:
+            new_last_action = MnkAction(state.last_action.x, m - 1 - state.last_action.y)
+        new_state = MnkState(new_board, state.stone_count, new_last_action)
+        return new_state
+
+    def _flip_state_horizontally(state: MnkState) -> list[list[float]]:
+        """ """
+        new_board: list[list[Optional[Stone]]] = []
+        for row in state.board:
+            new_row = [Stone(s.color) if s is not None else None for s in reversed(row)]
+            new_board.append(new_row)
+        new_last_action = None
+        if state.last_action is not None:
+            new_last_action = MnkAction(n - 1 - state.last_action.x, state.last_action.y)
+        new_state = MnkState(new_board, state.stone_count, new_last_action)
+        return new_state
+
+    def _flip_state_centrally(state: MnkState) -> list[list[float]]:
+        """ """
+        new_board: list[list[Optional[Stone]]] = []
+        for row in reversed(state.board):
+            new_row = [Stone(s.color) if s is not None else None for s in reversed(row)]
+            new_board.append(new_row)
+        new_last_action = None
+        if state.last_action is not None:
+            new_last_action = MnkAction(n - 1 - state.last_action.x, m - 1 - state.last_action.y)
+        new_state = MnkState(new_board, state.stone_count, new_last_action)
+        return new_state
+
+    # `_flip_probabilities_*` functions use the same layout as `MnkGame.list_all_actions` method to ensure the same action order.
+    # Please refer to `..core.network.Model` class for details.
+
+    def _flip_probabilities_vertically(probabilities: list[float]) -> list[float]:
+        """ """
+        new_probabilities: list[float] = []
+        for y in reversed(range(m)):
+            new_row = [probabilities[y * n + x] for x in range(n)]
+            new_probabilities += new_row
+        return new_probabilities
+
+    def _flip_probabilities_horizontally(probabilities: list[float]) -> list[float]:
+        """ """
+        new_probabilities: list[float] = []
+        for y in range(m):
+            new_row = [probabilities[y * n + x] for x in reversed(range(n))]
+            new_probabilities += new_row
+        return new_probabilities
+
+    def _flip_probabilities_centrally(probabilities: list[float]) -> list[float]:
+        """ """
+        new_probabilities: list[float] = []
+        for y in reversed(range(m)):
+            new_row = [probabilities[y * n + x] for x in reversed(range(n))]
+            new_probabilities += new_row
+        return new_probabilities
+
+    augmented_data_list: dict[str, tuple[MnkState, list[float], float]] = {
+        "vertical": (_flip_state_vertically(state), _flip_probabilities_vertically(probabilities), reward),
+        "horizontal": (_flip_state_horizontally(state), _flip_probabilities_horizontally(probabilities), reward),
+        "central": (_flip_state_centrally(state), _flip_probabilities_centrally(probabilities), reward),
+        # TODO: Add rotations.
+    }
+    return augmented_data_list
