@@ -92,6 +92,11 @@ def play(
     Each move is selected after executing a specific number of MCTS simulations.
     """
     all_actions = game.list_all_actions()
+    # Since we need to switch to a different model and its corresponding tree when changing turns,
+    # we must check whether the next state exists in the tree.
+    # Theoretically, we could do this by storing only a root node for each model and performing a recursive search,
+    # but since this approach is inefficient, we store the list of existing states in `state_caches` variable for faster checking.
+    state_caches: list[dict[State, Node]] = [{} for _ in range(len(models))]
     node = Node(game.begin())
     moves: list[tuple[State, list[float]]] = []
     reward = 0.0
@@ -103,7 +108,10 @@ def play(
         if is_terminated:
             break
         # Select the next action.
+        # TODO: Allow models to apply their own custom selection strategies instead of executing MCTS for them,
+        # as they may not be trained using AlphaZero.
         action, legal_searches = _play_select(
+            state_caches[i % len(models)],
             node,
             game,
             models[i % len(models)],
@@ -112,13 +120,23 @@ def play(
         )
         search_probabilities = [legal_searches[a] if a in legal_searches else 0.0 for a in all_actions]
         moves.append((node.state, search_probabilities))
-        # Move to the next node and next turn.
-        node = node.children[action].node
+        # Move to the next model and next node.
         i += 1
+        state = node.children[action].node.state
+        if state in state_caches[i % len(models)]:
+            node = state_caches[i % len(models)][state]
+        else:
+            # Because trees are independent across different models, when we switch to the tree of the next model,
+            # there is a chance that the new state has not been discovered by that model;
+            # therefore, the corresponding node does not exist in the tree.
+            # In that case, we create a new root node and reset the entire tree for the next model.
+            node = Node(state)
+            state_caches[i % len(models)] = {}
     return node.state, moves, reward
 
 
 def _play_select(
+    state_cache: dict[State, Node],
     node: Node,
     game: Game,
     model: Model,
@@ -134,7 +152,8 @@ def _play_select(
         # Run an initial simulation to expand a leaf node.
         simulations_num += 1
     while i < simulations_num:
-        _execute_an_mcts_simulation(node, game, model)
+        for expanded_state, expanded_node in _execute_an_mcts_simulation(node, game, model).items():
+            state_cache[expanded_state] = expanded_node
         # Next simulation.
         i += 1
     # Select a move according to the search probabilities π computed by MCTS.
@@ -148,8 +167,9 @@ def _play_select(
     return action, legal_searches
 
 
-def _execute_an_mcts_simulation(root: Node, game: Game, model: Model):
+def _execute_an_mcts_simulation(root: Node, game: Game, model: Model) -> dict[State, Node]:
     """
+    Return a dictionary mapping each expanded state to its corresponding node.
     NOTE: By "root", we mean the node where MCTS simulation begins, not an initial game state.
     """
     node = root
@@ -165,13 +185,17 @@ def _execute_an_mcts_simulation(root: Node, game: Game, model: Model):
         edges.append(edge)
         # Move to the next node.
         node = edge.node
+    expanded_states: dict[State, Node] = {}
     # We evaluate a leaf node only once during a single game play.
     # If the node is not a leaf, it should be a terminal node, in that case, we do not expand it again.
     if node.is_leaf:
         # Expand and evaluate a leaf node.
         _expand(node, game, model)
+        for edge in node.children.values():
+            expanded_states[edge.node.state] = edge.node
     # Update edge statistics in a backward pass through each move.
     _backup(edges, node.value)
+    return expanded_states
 
 
 def _mcts_select(node: Node) -> Action:
@@ -209,10 +233,9 @@ def _expand(node: Node, game: Game, model: Model):
     # TODO: Confirm whether the prior probabilities for legal actions should be recalculated after eliminating illegal ones.
     legal_actions, legal_prior_probabilities = calculate_legal_actions(prior_probabilities, game, node.state)
     # Create new edges that include prior probabilities only for legal actions.
-    node.children = {
-        a: Edge(Node(game.simulate(node.state, a)), legal_prior_probabilities[legal_actions.index(a)])
-        for a in legal_actions
-    }
+    for action in legal_actions:
+        state = game.simulate(node.state, action)
+        node.children[action] = Edge(Node(state), legal_prior_probabilities[legal_actions.index(action)])
     node.value = value
 
 
