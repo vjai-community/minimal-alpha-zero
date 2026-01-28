@@ -5,11 +5,10 @@ import pathlib
 import random
 import time
 
-import jax
 from flax import nnx
 
 from alphazero.core.game import ReplayBuffer
-from alphazero.core.generator import PlayConfig, NoiseSession, generate_data
+from alphazero.core.generator import PlayConfig, generate_data
 from alphazero.games.mnk import (
     MnkGame,
     MnkConfig,
@@ -29,7 +28,8 @@ logger = logging.getLogger(__name__)
 
 def main():
     # Configs
-    ITERATIONS_NUM = 100
+    ITERATIONS_NUM = 10
+    ITERATION_STOPPING_PATIENCE = 2
     # We want the first player to be able to force a win.
     # Doc: https://en.wikipedia.org/wiki/M,n,k-game#Specific_results.
     m, n, k = 4, 4, 3
@@ -39,7 +39,6 @@ def main():
     run_time = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     logger.info(f"seed={seed}, run_time={run_time}")
     random.seed(seed)
-    noise_key = jax.random.PRNGKey(seed)
     rngs = nnx.Rngs(seed)
     run_dir = STORAGE_DIR / run_time
     os.makedirs(run_dir, exist_ok=True)
@@ -75,11 +74,6 @@ def main():
         # then lower the temperature for the rest to achieve stronger play.
         calculate_temperature=lambda i: 1.0 if i <= 1 else 0.1,
     )
-    noise_session = NoiseSession(
-        key=noise_key,
-        dirichlet_alpha=0.5,
-        fraction=0.25,
-    )
     mnk_config = MnkConfig(
         learning_rate=0.0005,
         epochs_num=100,
@@ -91,7 +85,7 @@ def main():
         rngs=rngs,
     )
     mnk_network = MnkNetwork(m, n, mnk_config)
-    replay_buffer = ReplayBuffer(self_plays_num * 128)
+    replay_buffer = ReplayBuffer()
     dummy_model = DummyModel(m, n)
 
     # Training and evaluating.
@@ -103,19 +97,15 @@ def main():
         mnk_config.play_config,
         output_dir=run_dir / "initial" / EVALUATION_DUMMY_BEST_DIR_NAME,
     )
-    for i in range(ITERATIONS_NUM):
+    i = 0
+    iteration_patience_count = 0
+    while True:
         logger.info(f"iteration_index={i:0{len(str(ITERATIONS_NUM))}d}")
         output_dir = run_dir / f"iteration_{i:0{len(str(ITERATIONS_NUM))}d}"
         data_output_dir = output_dir / "data"
         os.makedirs(data_output_dir, exist_ok=True)
         j = 0
-        for data_list in generate_data(
-            mnk_game,
-            mnk_network.get_best_model(),
-            self_plays_num,
-            training_play_config,
-            noise_session=noise_session,
-        ):
+        for data_list in generate_data(mnk_game, mnk_network.get_best_model(), self_plays_num, training_play_config):
             data_file_name = f"self_play-{j:0{len(str(self_plays_num))}d}"
             # Store and log the training data.
             with (
@@ -148,6 +138,13 @@ def main():
         # Clear the replay buffer after updating the best model.
         if is_best_model_updated:
             replay_buffer.reset()
+            iteration_patience_count = 0
+        else:
+            iteration_patience_count += 1
+        if i >= ITERATIONS_NUM - 1 or iteration_patience_count == ITERATION_STOPPING_PATIENCE:
+            break
+        # Next iteration.
+        i += 1
 
 
 if __name__ == "__main__":
