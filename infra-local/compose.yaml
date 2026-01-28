@@ -1,0 +1,10 @@
+services:
+  minimal-alpha-zero:
+    hostname: minimal-alpha-zero
+    build:
+      context: ../minimal-alpha-zero/
+      dockerfile: Dockerfile.local
+    volumes:
+      - ../:/usr/local/src/minimal-alpha-zero/
+    tty: true
+    working_dir: /usr/local/src/minimal-alpha-zero/minimal-alpha-zero/
