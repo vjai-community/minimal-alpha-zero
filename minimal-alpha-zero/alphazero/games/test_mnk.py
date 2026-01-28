@@ -60,8 +60,17 @@ class TestMnk:
             batch_size=128,
             competitions_num=250,
             competition_margin=0.1,
+            select_simulations_num=m * n * 2,
+            select_temperature=0.1,
         )
         mnk_network = MnkNetwork(m, n, mnk_config)
         candidate_model = nnx.clone(mnk_network.best_model)
-        result = evaluate(mnk_network.best_model, candidate_model, mnk_game, mnk_config.competitions_num)
+        result = evaluate(
+            mnk_network.best_model,
+            candidate_model,
+            mnk_game,
+            mnk_config.competitions_num,
+            mnk_config.select_simulations_num,
+            mnk_config.select_temperature,
+        )
         assert abs(result) < mnk_config.competition_margin

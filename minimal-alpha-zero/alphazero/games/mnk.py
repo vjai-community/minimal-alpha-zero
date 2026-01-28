@@ -12,8 +12,9 @@ import optax
 from flax import nnx
 from jax import Array, numpy as jnp
 
-from ..core.game import Action, InputData, State, Game, ReplayBuffer, calculate_legal_actions
+from ..core.game import Action, InputData, State, Game, ReplayBuffer
 from ..core.network import Model, Network
+from ..core.generator import play
 
 
 logger = logging.getLogger(__name__)
@@ -100,7 +101,8 @@ class MnkState(State):
                     board_str += "\033[1m"
                 board_str += "." if stone is None else "\033[31mX" if stone.color == StoneColor.RED else "\033[32mO"
                 board_str += "\033[0m "
-            board_str += "\n"
+            if y < len(self.board) - 1:
+                board_str += "\n"
         return board_str
 
 
@@ -251,6 +253,40 @@ class MnkModel(nnx.Module, Model):
         value_output = nnx.tanh(self.value_head(x)).squeeze(-1)
         return prior_probabilities_output, value_output
 
+    def predict_single(self, input_data: MnkInputData) -> tuple[dict[MnkAction, float], float]:
+        """ """
+        self.eval()  # Switch to eval mode
+        x = jnp.array(input_data.board_data)
+        m, n = x.shape  # Fortunately, the action space has the same total size as the input data shape
+        x = x.reshape((1, *x.shape, MnkModel.INPUT_CHANNEL))
+        prior_probabilities_output, value_output = self(x)
+        prior_probabilities: dict[MnkAction, float] = {}
+        for y in range(m):
+            for x in range(n):
+                # Use the same layout as `MnkGame.list_all_actions` method to ensure the same action order.
+                # Please refer to `..core.network.Model` class for details.
+                prior_probabilities[MnkAction(x, y)] = prior_probabilities_output[0][y * n + x].item()
+        value: float = value_output.item()
+        return prior_probabilities, value
+
+
+class DummyModel(Model):
+    """ """
+
+    m: int  # Number of rows
+    n: int  # Number of columns
+
+    def __init__(self, m: int, n: int):
+        self.m = m
+        self.n = n
+
+    def predict_single(self, input_data: MnkInputData) -> tuple[dict[MnkAction, float], float]:
+        """ """
+        m, n = self.m, self.n
+        prior_probabilities = {MnkAction(x, y): 1.0 / (m * n) for y in range(m) for x in range(n)}
+        value = 0.0
+        return prior_probabilities, value
+
 
 class MnkConfig:
     """ """
@@ -260,6 +296,8 @@ class MnkConfig:
     batch_size: int
     competitions_num: int
     competition_margin: float  # Should be positive and less than 1
+    select_simulations_num: int
+    select_temperature: float
     model_dir: Optional[os.PathLike]
     rngs: nnx.Rngs
 
@@ -271,6 +309,8 @@ class MnkConfig:
         batch_size: int,
         competitions_num: int,
         competition_margin: float,
+        select_simulations_num: int,
+        select_temperature: float,
         model_dir: os.PathLike = None,
         rngs: nnx.Rngs = nnx.Rngs(0),
     ):
@@ -279,6 +319,8 @@ class MnkConfig:
         self.batch_size = batch_size
         self.competitions_num = competitions_num
         self.competition_margin = competition_margin
+        self.select_simulations_num = select_simulations_num
+        self.select_temperature = select_temperature
         self.model_dir = model_dir
         self.rngs = rngs
 
@@ -297,11 +339,6 @@ class MnkNetwork(Network):
         self.best_model = MnkModel(m, n, config.rngs)
         self.config = config
 
-    def best_model_predict_single(self, input_data: MnkInputData) -> tuple[dict[MnkAction, float], float]:
-        """ """
-        self.best_model.eval()  # Switch to eval mode
-        return _model_predict_single(self.best_model, input_data)
-
     def train_and_evaluate(self, replay_buffer: ReplayBuffer, game: MnkGame):
         """ """
         # Train a new candidate model.
@@ -313,11 +350,30 @@ class MnkNetwork(Network):
             data_list = [(s.make_input_data(), p, w) for (s, p, w) in replay_buffer.buffer]
             self._train_one_epoch(candidate_model, optimizer, metric, data_list, self.config.batch_size)
         # Evaluate the candidate model against the current best model.
-        result = evaluate(self.best_model, candidate_model, game, self.config.competitions_num)
-        logger.info(f"result={result}")
+        self.best_model.eval()  # Switch to eval mode
+        candidate_model.eval()  # Switch to eval mode
+        result = evaluate(
+            self.best_model,
+            candidate_model,
+            game,
+            self.config.competitions_num,
+            self.config.select_simulations_num,
+            self.config.select_temperature,
+        )
+        logger.info(f"model1=best_model, model2=candidate_model, result={result}")
         if result > 0 and abs(result) > self.config.competition_margin:
             # The candidate model becomes the new best model.
             self.best_model = candidate_model
+            dummy_model = DummyModel(self.m, self.n)
+            result = evaluate(
+                dummy_model,
+                self.best_model,
+                game,
+                self.config.competitions_num,
+                self.config.select_simulations_num,
+                self.config.select_temperature,
+            )
+            logger.info(f"model1=dummy_model, model2=best_model, result={result}")
 
     @staticmethod
     def _train_one_epoch(
@@ -352,64 +408,38 @@ class MnkNetwork(Network):
             metric.update(loss=loss)
 
 
-def evaluate(model1: MnkModel, model2: MnkModel, game: MnkGame, competitions_num: int) -> float:
+def evaluate(
+    model1: MnkModel,
+    model2: MnkModel,
+    game: MnkGame,
+    competitions_num: int,
+    select_simulations_num: int,
+    select_temperature: float,
+) -> float:
     """
     Return a result close to -1 if `model1` is better, and close to 1 if `model2` is better.
     """
 
-    def _compete_one_game(model1: MnkModel, model2: MnkModel, game: MnkGame) -> int:
+    def _compete_one_game(model1: MnkModel, model2: MnkModel) -> float:
         """
         Have two models play a game and choose the better one based on the reward.
         Return -1 if `model1` wins, 1 if `model2` wins, `0` for a draw.
         NOTE: `model1` always moves first.
         """
-        state = game.begin()
-        i = -1
-        is_model1 = False
-        while True:
-            reward = game.receive_reward_if_terminal(state)
-            is_terminated = reward is not None
-            if is_terminated:
-                break
-            i += 1
-            is_model1 = i % 2 == 0
-            model = model1 if is_model1 else model2
-            prior_probabilities, _ = _model_predict_single(model, state.make_input_data())
-            # TODO: Tune the temperature.
-            legal_actions, legal_prior_probabilities = calculate_legal_actions(prior_probabilities, game, state)
-            # TODO: Use a stochastic approach rather than deterministically selecting the move with the maximum probability.
-            action = legal_actions[legal_prior_probabilities.index(max(legal_prior_probabilities))]
-            state = game.simulate(state, action)
-        if i < 0 or reward == 0:
-            return 0  # Draw
-        result = -1 if is_model1 == reward > 0 else 1
+        _, moves, reward = play(game, [model1, model2], select_simulations_num, select_temperature=select_temperature)
+        is_model1_last_mover = len(moves) % 2 == 1
+        if reward == 0.0:
+            return 0.0
+        result = -1.0 if is_model1_last_mover == (reward > 0) else 1.0
         return result
 
-    model1.eval()  # Switch to eval mode
-    model2.eval()  # Switch to eval mode
     result = 0.0
     for i in range(competitions_num):
         is_model1_first_mover = i % 2 == 0
         # Two models take turns having the first move in each competition.
         if is_model1_first_mover:
-            result += _compete_one_game(model1, model2, game)
+            result += _compete_one_game(model1, model2)
         else:
-            result -= _compete_one_game(model2, model1, game)
+            result -= _compete_one_game(model2, model1)
     result /= competitions_num
     return result
-
-
-def _model_predict_single(model: MnkModel, input_data: MnkInputData) -> tuple[dict[MnkAction, float], float]:
-    """ """
-    x = jnp.array(input_data.board_data)
-    m, n = x.shape  # Fortunately, the action space has the same total size as the input data shape
-    x = x.reshape((1, *x.shape, MnkModel.INPUT_CHANNEL))
-    prior_probabilities_output, value_output = model(x)
-    prior_probabilities: dict[MnkAction, float] = {}
-    for y in range(m):
-        for x in range(n):
-            # Uses the same layout as `MnkGame.list_all_actions` method to ensure the same action order.
-            # Please refer to `..core.network.Model.__call__` method for details.
-            prior_probabilities[MnkAction(x, y)] = prior_probabilities_output[0][y * n + x].item()
-    value: float = value_output.item()
-    return prior_probabilities, value

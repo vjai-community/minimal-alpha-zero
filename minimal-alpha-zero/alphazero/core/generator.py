@@ -1,5 +1,5 @@
 """
-Use the best network to generate data for further training.
+Use the best model to generate data for further training.
 """
 
 import logging
@@ -8,7 +8,7 @@ import random
 from typing import Iterable, Optional
 
 from .game import Action, State, Game, calculate_legal_actions
-from .network import Network
+from .network import Model
 
 
 logger = logging.getLogger(__name__)
@@ -52,7 +52,7 @@ class Edge:
 
 def generate_data(
     game: Game,
-    network: Network,
+    model: Model,
     self_plays_num: Optional[int] = None,
     self_play_select_simulations_num: int = 1,
 ) -> Iterable[tuple[State, list[float], float]]:
@@ -61,7 +61,8 @@ def generate_data(
     """
     i = 0
     while self_plays_num is None or i < self_plays_num:
-        moves, reward = _self_play(game, network, self_play_select_simulations_num)
+        # Use the same model for both players during self-play.
+        _, moves, reward = play(game, [model], self_play_select_simulations_num)
         if len(moves) == 0 or reward is None:
             # Just in case.
             continue
@@ -79,20 +80,22 @@ def generate_data(
         i += 1
 
 
-def _self_play(
+def play(
     game: Game,
-    network: Network,
+    models: list[Model],
     select_simulations_num: int,
-) -> tuple[list[tuple[State, list[float]]], float]:
+    select_temperature: float = 1.0,  # TODO: Tune this hyperparameter
+) -> tuple[State, list[tuple[State, list[float]]], float]:
     """
-    Play a game to generate data for training a new network.
+    Play a game with multiple players.
+    Each player (model) takes turns in order based on its index in the list.
     Each move is selected after executing a specific number of MCTS simulations.
     """
     all_actions = game.list_all_actions()
-    state = game.begin()
-    node = Node(state)
+    node = Node(game.begin())
     moves: list[tuple[State, list[float]]] = []
     reward = 0.0
+    i = 0
     while True:
         # The final reward is computed at this state, but it is assigned to the last move that produced this state.
         reward = game.receive_reward_if_terminal(node.state)
@@ -100,21 +103,27 @@ def _self_play(
         if is_terminated:
             break
         # Select the next action.
-        action, legal_searches = _self_play_select(node, game, network, select_simulations_num)
+        action, legal_searches = _play_select(
+            node,
+            game,
+            models[i % len(models)],
+            select_simulations_num,
+            select_temperature,
+        )
         search_probabilities = [legal_searches[a] if a in legal_searches else 0.0 for a in all_actions]
         moves.append((node.state, search_probabilities))
-        # Move to the next node.
+        # Move to the next node and next turn.
         node = node.children[action].node
-    logger.debug("\n" + str(node.state))
-    return moves, reward
+        i += 1
+    return node.state, moves, reward
 
 
-def _self_play_select(
+def _play_select(
     node: Node,
     game: Game,
-    network: Network,
+    model: Model,
     simulations_num: int,
-    temperature: float = 1.0,  # TODO: Tune this hyperparameter
+    temperature: float,  # τ
 ) -> tuple[Action, dict[Action, float]]:
     """
     Select a legal action to move to a new state.
@@ -125,7 +134,7 @@ def _self_play_select(
         # Run an initial simulation to expand a leaf node.
         simulations_num += 1
     while i < simulations_num:
-        _execute_an_mcts_simulation(node, game, network)
+        _execute_an_mcts_simulation(node, game, model)
         # Next simulation.
         i += 1
     # Select a move according to the search probabilities π computed by MCTS.
@@ -139,7 +148,7 @@ def _self_play_select(
     return action, legal_searches
 
 
-def _execute_an_mcts_simulation(root: Node, game: Game, network: Network):
+def _execute_an_mcts_simulation(root: Node, game: Game, model: Model):
     """
     NOTE: By "root", we mean the node where MCTS simulation begins, not an initial game state.
     """
@@ -156,11 +165,11 @@ def _execute_an_mcts_simulation(root: Node, game: Game, network: Network):
         edges.append(edge)
         # Move to the next node.
         node = edge.node
-    # We evaluate a leaf node only once during a single self-play.
+    # We evaluate a leaf node only once during a single game play.
     # If the node is not a leaf, it should be a terminal node, in that case, we do not expand it again.
     if node.is_leaf:
         # Expand and evaluate a leaf node.
-        _expand(node, game, network)
+        _expand(node, game, model)
     # Update edge statistics in a backward pass through each move.
     _backup(edges, node.value)
 
@@ -190,12 +199,12 @@ def _mcts_select(node: Node) -> Action:
     return action
 
 
-def _expand(node: Node, game: Game, network: Network):
+def _expand(node: Node, game: Game, model: Model):
     """
     Evaluate a leaf node by assigning a value to its state and prior probabilities to each of its edges.
     """
-    # TODO: Confirm which value should be used for a terminal state: value predicted by the network or final reward from gameplay.
-    prior_probabilities, value = network.best_model_predict_single(node.state.make_input_data())
+    # TODO: Confirm which value should be used for a terminal state: value predicted by the model or final reward from gameplay.
+    prior_probabilities, value = model.predict_single(node.state.make_input_data())
     # The prior may contain non-zero probabilities for illegal actions. We need to eliminate those and keep only the legal ones.
     # TODO: Confirm whether the prior probabilities for legal actions should be recalculated after eliminating illegal ones.
     legal_actions, legal_prior_probabilities = calculate_legal_actions(prior_probabilities, game, node.state)
