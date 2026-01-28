@@ -2,6 +2,7 @@
 Please read https://en.wikipedia.org/wiki/M,n,k-game, I'm too lazy to write the description.
 """
 
+import csv
 import logging
 import os
 import random
@@ -11,6 +12,7 @@ from typing import Optional
 
 import optax
 from flax import nnx
+from flax.training.early_stopping import EarlyStopping
 from jax import Array, nn, numpy as jnp
 
 from ..core.game import Action, InputData, State, Game, ReplayBuffer
@@ -317,6 +319,7 @@ class MnkConfig:
     learning_rate: float
     epochs_num: int
     batch_size: int
+    stopping_patience: int
     competitions_num: int
     competition_margin: float  # Should be positive and less than 1
     play_config: PlayConfig
@@ -328,6 +331,7 @@ class MnkConfig:
         learning_rate: float,
         epochs_num: int,
         batch_size: int,
+        stopping_patience: int,
         competitions_num: int,
         competition_margin: float,
         play_config: PlayConfig,
@@ -336,6 +340,7 @@ class MnkConfig:
         self.learning_rate = learning_rate
         self.epochs_num = epochs_num
         self.batch_size = batch_size
+        self.stopping_patience = stopping_patience
         self.competitions_num = competitions_num
         self.competition_margin = competition_margin
         self.play_config = play_config
@@ -364,10 +369,26 @@ class MnkNetwork(Network):
         candidate_model.set_name("candidate")
         candidate_model.train()  # Switch to train mode
         optimizer = nnx.Optimizer(candidate_model, optax.adamw(self.config.learning_rate), wrt=nnx.Param)
-        metric = nnx.MultiMetric(loss=nnx.metrics.Average("loss"))
-        for _ in range(self.config.epochs_num):
-            data_list = [(s.make_input_data(), p, w) for (s, p, w) in replay_buffer.buffer]
-            self._train_one_epoch(candidate_model, optimizer, metric, data_list, self.config.batch_size)
+        early_stopping = EarlyStopping(patience=self.config.stopping_patience)
+        with open(output_dir / "metric.csv", "a") as metric_file:
+            metric_writer = csv.DictWriter(metric_file, ["epoch", "train_loss", "val_loss"])
+            metric_writer.writeheader()
+            i = 0
+            while True:
+                data_list = [(s.make_input_data(), p, w) for (s, p, w) in replay_buffer.buffer]
+                metric_record = self._train_one_epoch(candidate_model, optimizer, data_list, self.config.batch_size)
+                # Log the metrics.
+                metric_row = {"epoch": i}
+                for name, value in metric_record.items():
+                    metric_row[name] = value
+                metric_writer.writerow(metric_row)
+                metric_file.flush()
+                # Check stopping condition.
+                early_stopping = early_stopping.update(metric_record["val_loss"])
+                if early_stopping.should_stop or i >= self.config.epochs_num - 1:
+                    break
+                # Next epoch.
+                i += 1
         # Evaluate the candidate model against the current best model.
         self.best_model.eval()  # Switch to eval mode
         candidate_model.eval()  # Switch to eval mode
@@ -405,12 +426,12 @@ class MnkNetwork(Network):
     def _train_one_epoch(
         model: MnkModel,
         optimizer: nnx.Optimizer,
-        metric: nnx.MultiMetric,
         data_list: list[tuple[MnkInputData, list[float], float]],
         batch_size: int,
-    ):
+        split_ratio: float = 0.9,
+    ) -> dict[str, float]:
         """
-        Train for one epoch without evaluation.
+        Train for one epoch.
         """
 
         def _loss_fn(model: MnkModel, data_batch: tuple[Array, Array, Array]) -> tuple[float, tuple[Array, Array]]:
@@ -422,16 +443,37 @@ class MnkNetwork(Network):
             loss = value_loss + probabilities_loss
             return loss, (prior_probabilities_logits, winners)
 
+        metric = nnx.MultiMetric(loss=nnx.metrics.Average("loss"))
+        metric_record: dict[str, float] = {}
         data_list = random.sample(data_list, len(data_list))  # TODO: Choose a deterministic approach
+        train_len = int(len(data_list) * split_ratio)
+        train_data_list = data_list[:train_len]
+        val_data_list = data_list[train_len:]
         grad_fn = nnx.value_and_grad(_loss_fn, has_aux=True)
-        for data_batch in [data_list[i : i + batch_size] for i in range(0, len(data_list), batch_size)]:
+        # Training
+        for data_batch in [train_data_list[i : i + batch_size] for i in range(0, len(train_data_list), batch_size)]:
             boards = jnp.array([i.board_data for (i, _, _) in data_batch])
             boards = boards.reshape((*boards.shape, MnkModel.INPUT_CHANNEL))
             improved_probabilities = jnp.array([p for (_, p, _) in data_batch])
             winners = jnp.array([w for (_, _, w) in data_batch])
             (loss, _), grads = grad_fn(model, (boards, improved_probabilities, winners))
-            optimizer.update(model, grads)
             metric.update(loss=loss)
+            optimizer.update(model, grads)
+        for name, value in metric.compute().items():
+            metric_record[f"train_{name}"] = value
+        metric.reset()
+        # Evaluating
+        for data_batch in [val_data_list[i : i + batch_size] for i in range(0, len(val_data_list), batch_size)]:
+            boards = jnp.array([i.board_data for (i, _, _) in data_batch])
+            boards = boards.reshape((*boards.shape, MnkModel.INPUT_CHANNEL))
+            improved_probabilities = jnp.array([p for (_, p, _) in data_batch])
+            winners = jnp.array([w for (_, _, w) in data_batch])
+            loss, _ = _loss_fn(model, (boards, improved_probabilities, winners))
+            metric.update(loss=loss)
+        for name, value in metric.compute().items():
+            metric_record[f"val_{name}"] = value
+        metric.reset()
+        return metric_record
 
 
 def evaluate(

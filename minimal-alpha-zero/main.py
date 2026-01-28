@@ -83,6 +83,7 @@ def main():
         learning_rate=0.0005,
         epochs_num=100,
         batch_size=128,
+        stopping_patience=5,
         competitions_num=250,
         competition_margin=0.1,
         play_config=evaluation_play_config,
