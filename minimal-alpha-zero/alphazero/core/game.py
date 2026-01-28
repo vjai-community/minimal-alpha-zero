@@ -101,15 +101,14 @@ def calculate_legal_actions(
     prior_probabilities: dict[Action, float],
     game: Game,
     state: State,
-    temperature: float = 1.0,
 ) -> tuple[list[Action], list[float]]:
     legal_actions = game.list_legal_actions(state)
     legal_action_prior_probabilities = {a: p for a, p in prior_probabilities.items() if a in legal_actions}
-    legal_prior_probabilities = _softmax(list(legal_action_prior_probabilities.values()), temperature)
+    legal_prior_probabilities = _softmax(list(legal_action_prior_probabilities.values()))
     return legal_actions, legal_prior_probabilities
 
 
-def _softmax(logits: list[float], temperature: float) -> list[float]:
-    exp_values = [math.exp(l / temperature) for l in logits]  # noqa: E741 (https://docs.astral.sh/ruff/rules/ambiguous-variable-name/)
+def _softmax(logits: list[float]) -> list[float]:
+    exp_values = [math.exp(l) for l in logits]  # noqa: E741 (https://docs.astral.sh/ruff/rules/ambiguous-variable-name/)
     exp_values_sum = sum(exp_values)
     return [v / exp_values_sum for v in exp_values]
