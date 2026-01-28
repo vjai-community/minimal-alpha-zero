@@ -5,7 +5,7 @@ Use the best model to generate data for further training.
 import logging
 import math
 import random
-from typing import Iterable, Optional
+from typing import Callable, Iterable, Optional
 
 import jax
 from jax import numpy as jnp
@@ -58,18 +58,18 @@ class PlayConfig:
 
     simulations_num: int
     c_puct: float
-    temperature: float  # τ
+    calculate_temperature: Callable[[int], float]  # τ
 
     def __init__(
         self,
         *,
         simulations_num: int = 1,
         c_puct: float = 1.0,
-        temperature: float = 1.0,
+        calculate_temperature: Callable[[int], float] = lambda _: 1.0,
     ):
         self.simulations_num = simulations_num
         self.c_puct = c_puct
-        self.temperature = temperature
+        self.calculate_temperature = calculate_temperature
 
 
 class NoiseSession:
@@ -157,6 +157,7 @@ def play(
         # TODO: Allow models to apply their own custom selection strategies instead of executing MCTS for them,
         # as they may not be trained using AlphaZero.
         action, legal_searches = _play_select(
+            i,
             state_caches[i % len(models)],
             node,
             game,
@@ -183,6 +184,7 @@ def play(
 
 
 def _play_select(
+    move_index: int,
     state_cache: dict[State, Node],
     node: Node,
     game: Game,
@@ -209,7 +211,9 @@ def _play_select(
         i += 1
     # Select a move according to the search probabilities π computed by MCTS.
     # π(a|s) = N(s,a)^(1/τ) / (∑b N(s,b)^(1/τ))
-    scaled_visit_counts = {a: math.pow(e.visit_count, 1 / config.temperature) for a, e in node.children.items()}
+    scaled_visit_counts = {
+        a: math.pow(e.visit_count, 1 / config.calculate_temperature(move_index)) for a, e in node.children.items()
+    }
     scaled_visit_counts_sum = sum(scaled_visit_counts.values())
     legal_searches = {a: c / scaled_visit_counts_sum for a, c in scaled_visit_counts.items()}
     action = random.choices(list(legal_searches.keys()), weights=list(legal_searches.values()))[0]
