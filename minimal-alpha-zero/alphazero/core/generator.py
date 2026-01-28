@@ -284,7 +284,12 @@ def _expand(node: Node, game: Game, model: Model):
     legal_actions: list[Action]
     reward = game.receive_reward_if_terminal(node.state)
     if reward is not None:
-        prior_probabilities, value = {}, reward
+        # The minus sign in `-reward` indicates that the current state's value has the opposite sign of the reward,
+        # since the current state belongs to the current player, but the reward comes from the opponent's last move.
+        # For example, if a state is terminal and has a reward of `1`, it means the opponent won with the last move,
+        # so the current player lost, and the current state's value is `-1`.
+        # Ref: `.game.Game.receive_reward_if_terminal` method.
+        prior_probabilities, value = {}, -reward
         # There are no legal actions available for a terminal state.
         legal_actions = []
     else:
@@ -307,7 +312,9 @@ def _backup(edges: list[Edge], value: float):
         # The sign of value flips at each edge as we traverse backward.
         # See `generate_data` function for an explanation, since it applies the same logic.
         is_current_player_last_mover = i % 2 == 0
-        cur_value = value * (1 if is_current_player_last_mover else -1)
+        # The last mover (i.e., the action of the last edge) receives `-value`
+        # because `value` belongs to a state that comes from the opponent's perspective.
+        cur_value = value * (-1 if is_current_player_last_mover else 1)
         edge.action_value = (edge.action_value * edge.visit_count + cur_value) / (edge.visit_count + 1)
         edge.visit_count += 1
 
