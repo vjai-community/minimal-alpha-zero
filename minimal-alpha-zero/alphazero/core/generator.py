@@ -99,7 +99,7 @@ def generate_data(
     self_plays_num: int,
     play_config: PlayConfig,
     noise_session: Optional[NoiseSession] = None,
-) -> Iterable[tuple[State, list[float], float]]:
+) -> Iterable[list[tuple[State, list[float], float]]]:
     """
     Continuously play games over many self-plays to generate data.
     """
@@ -110,6 +110,7 @@ def generate_data(
         if len(moves) == 0 or reward is None:
             # Just in case.
             continue
+        data_list: list[tuple[State, list[float], float]] = []
         for j, (state, _, search_probabilities, _) in enumerate(moves):
             # The sign of reward for each move (positive or negative) alternates based on current player's perspective,
             # since two players take turns: Player A moves first, Player B moves second, then Player A again, and so on.
@@ -119,7 +120,8 @@ def generate_data(
             # NOTE: In case of a draw, all rewards should be 0.
             is_current_player_last_mover = (len(moves) - 1 - j) % 2 == 0
             cur_reward = reward * (1 if is_current_player_last_mover else -1)
-            yield state, search_probabilities, cur_reward
+            data_list.append((state, search_probabilities, cur_reward))
+        yield data_list
         # Next self-play.
         i += 1
 
