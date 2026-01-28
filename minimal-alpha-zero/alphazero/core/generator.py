@@ -156,6 +156,7 @@ def play(
         search_probs: dict[Action, float]
         model, model_config = model_specs[i % len(model_specs)]
         if model_config.mcts_simulations_num is not None:
+            print("[MCTS]  ", "================================================================================")
             _execute_mcts(
                 state_caches[i % len(model_specs)],
                 node,
@@ -172,6 +173,12 @@ def play(
             }
             scaled_visit_counts_sum = sum(scaled_visit_counts.values())
             search_probs = {a: c / scaled_visit_counts_sum for a, c in scaled_visit_counts.items()}
+            print("[SELECT]")
+            print(
+                node.state,
+                "π=" + ",".join([f"{p:.2f}" for p in search_probs.values()]) + ";",
+                "N=" + ",".join([f"{e.visit_count}" for e in node.children.values()]) + ";",
+            )
         else:
             if node.is_leaf:
                 # If MCTS is not executed, we directly use the prior probabilities instead of the visit counts.
@@ -219,6 +226,7 @@ def _execute_mcts(
         Return a dictionary mapping each expanded state to its corresponding node.
         NOTE: By "root", we mean the node where MCTS simulation begins, not an initial game state.
         """
+        print("[MCTS]  ", "----------------------------------------")
         node = root
         edges: list[Edge] = []
         while True:
@@ -280,6 +288,14 @@ def _select(node: Node, c_puct: float) -> Action:
     # NOTE: Assume the node is not a leaf.
     visit_counts_sum = sum([e.visit_count for e in node.children.values()])
     # Select action with the maximum PUCT score.
+    print("[PUCT]  ")
+    print(
+        node.state,
+        "PUCT=" + ",".join([f"{_calc_puct_score(e, visit_counts_sum):.2f}" for e in node.children.values()]) + ";",
+        "Q=" + ",".join([f"{e.action_value:.2f}" for e in node.children.values()]) + ";",
+        "P=" + ",".join([f"{e.prior_prob:.2f}" for e in node.children.values()]) + ";",
+        "N=" + ",".join([f"{e.visit_count}" for e in node.children.values()]) + ";",
+    )
     action = max(node.children, key=lambda a: _calc_puct_score(node.children[a], visit_counts_sum))
     return action
 
@@ -305,6 +321,12 @@ def _expand(node: Node, game: Game, model: Model):
         prior_probs, value = model.predict_single(node.state.make_input_data())
         # The prior may contain non-zero probabilities for illegal actions. We need to eliminate those and keep only the legal ones.
         legal_actions = game.list_legal_actions(node.state)
+    print("[EXPAND]")
+    print(
+        node.state,
+        "P=" + ",".join([f"{p:.2f}" for p in prior_probs.values()]) + ";",
+        f"V={value:.2f}",
+    )
     legal_prior_probs = {a: p for a, p in prior_probs.items() if a in legal_actions}
     # Create new edges that include prior probabilities only for legal actions.
     for action in legal_actions:
@@ -317,6 +339,7 @@ def _backup(edges: list[Edge], value: float):
     """
     Update edge statistics.
     """
+    print("[BACKUP]")
     for i, edge in enumerate(reversed(edges)):
         # The sign of value flips at each edge as we traverse backward.
         # See `generate_data` function for an explanation, since it applies the same logic.
@@ -326,6 +349,7 @@ def _backup(edges: list[Edge], value: float):
         cur_value = value * (-1 if is_current_player_last_mover else 1)
         edge.action_value = (edge.action_value * edge.visit_count + cur_value) / (edge.visit_count + 1)
         edge.visit_count += 1
+        print(edge.node.state, f"Q={edge.action_value:.2f};", f"N={edge.visit_count};")
 
 
 def _add_noise(node: Node, session: NoiseSession):
