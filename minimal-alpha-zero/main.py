@@ -48,16 +48,27 @@ def main():
     # Initialize the game.
     c_puct = 2.0  # TODO: Tune this hyperparameter
     self_plays_num = 256
+
+    def _calculate_temperature(move_index: int) -> float:
+        """ """
+        MAX_TEMPERATURE = 1.0
+        MIN_TEMPERATURE = 0.1
+        DECAY_MOVES_NUM = int(m * n / 4)
+        temperature = (MIN_TEMPERATURE - MAX_TEMPERATURE) / DECAY_MOVES_NUM * move_index + MAX_TEMPERATURE
+        return max(temperature, MIN_TEMPERATURE)
+
     mnk_game = MnkGame(m, n, k)
     training_play_config = PlayConfig(
         simulations_num=m * n * 5,
         c_puct=c_puct,
-        temperature=1.0,  # TODO: Tune this hyperparameter
+        calculate_temperature=_calculate_temperature,  # TODO: Tune this hyperparameter
     )
     evaluation_play_config = PlayConfig(
         simulations_num=m * n * 5,
         c_puct=c_puct,
-        temperature=0.1,  # Lower temperature for stronger play
+        # Keep a high temperature for the first two moves (one move per turn for each player),
+        # then lower the temperature for the rest to achieve stronger play.
+        calculate_temperature=lambda i: 1.0 if i <= 1 else 0.1,
     )
     noise_session = NoiseSession(
         key=noise_key,

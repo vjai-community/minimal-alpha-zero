@@ -58,7 +58,7 @@ class TestMnk:
         play_config = PlayConfig(
             simulations_num=m * n * 5,
             c_puct=2.0,
-            temperature=0.1,  # Lower temperature for stronger play
+            calculate_temperature=lambda _: 0.1,  # Lower temperature for stronger play
         )
         mnk_config = MnkConfig(
             learning_rate=0.0005,
