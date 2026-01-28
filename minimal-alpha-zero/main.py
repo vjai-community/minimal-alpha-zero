@@ -74,7 +74,12 @@ def main():
         epochs_num=100,
         batch_size=128,
         stopping_patience=5,
-        should_evaluation_execute_mcts=True,
+        # Theoretically, not executing MCTS results in poor performance.
+        # However, as I understand it, a model trained with AlphaZero algorithm
+        # learns to output prior probabilities that are close to the improved search probabilities from previous iteration.
+        # This means that the longer the model is trained, the better it performs
+        # using raw prior probabilities alone, without the need to execute MCTS.
+        should_evaluation_execute_mcts=False,
         competitions_num=256,
         competition_margin=0.1,
         play_config=evaluation_play_config,
