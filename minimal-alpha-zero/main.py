@@ -16,6 +16,7 @@ from alphazero.games.mnk import (
     MnkNetwork,
     DummyModel,
     evaluate,
+    augment_data,
     format_board,
     EVALUATION_DUMMY_BEST_DIR_NAME,
 )
@@ -115,16 +116,32 @@ def main():
             training_play_config,
             noise_session=noise_session,
         ):
+            data_file_name = f"self_play-{j:0{len(str(self_plays_num))}d}"
             # Store and log the training data.
-            with open(data_output_dir / f"self_play-{j:0{len(str(self_plays_num))}d}.txt", "w") as data_file:
-                for data in data_list:
-                    replay_buffer.append(data)
-                    state, search_probabilities, reward = data
-                    data_file.write(f"{state}\n")
-                    data_file.write(f"Search probabilities:\n{format_board(search_probabilities, n)}\n")
-                    data_file.write(f"Reward: {reward}\n")
-                    data_file.write("\n")
-                    data_file.flush()
+            with (
+                open(data_output_dir / f"{data_file_name}-00_original.txt", "w") as original_data_file,
+                open(data_output_dir / f"{data_file_name}-01_vertical.txt", "w") as vertical_data_file,
+                open(data_output_dir / f"{data_file_name}-02_horizontal.txt", "w") as horizontal_data_file,
+                open(data_output_dir / f"{data_file_name}-03_central.txt", "w") as central_data_file,
+            ):
+                for original_data in data_list:
+                    augmented_data_list = augment_data(original_data)
+                    for data, data_file in zip(
+                        [
+                            original_data,
+                            augmented_data_list["vertical"],
+                            augmented_data_list["horizontal"],
+                            augmented_data_list["central"],
+                        ],
+                        [original_data_file, vertical_data_file, horizontal_data_file, central_data_file],
+                    ):
+                        replay_buffer.append(data)
+                        state, search_probabilities, reward = data
+                        data_file.write(f"{state}\n")
+                        data_file.write(f"Search probabilities:\n{format_board(search_probabilities, n)}\n")
+                        data_file.write(f"Reward: {reward}\n")
+                        data_file.write("\n")
+                        data_file.flush()
             j += 1
         logger.info(f"replay_buffer_len={len(replay_buffer.buffer)}")
         is_best_model_updated = mnk_network.train_and_evaluate(replay_buffer, mnk_game, output_dir)
