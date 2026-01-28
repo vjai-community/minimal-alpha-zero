@@ -158,11 +158,9 @@ def _play_select(
         i += 1
     # Select a move according to the search probabilities π computed by MCTS.
     # π(a|s) = N(s,a)^(1/τ) / (∑b N(s,b)^(1/τ))
-    visit_counts_sum = sum([e.visit_count for e in node.children.values()])
-    legal_searches = {
-        a: math.pow(e.visit_count, 1 / temperature) / math.pow(visit_counts_sum, 1 / temperature)
-        for a, e in node.children.items()
-    }
+    scaled_visit_counts = {a: math.pow(e.visit_count, 1 / temperature) for a, e in node.children.items()}
+    scaled_visit_counts_sum = sum(scaled_visit_counts.values())
+    legal_searches = {a: c / scaled_visit_counts_sum for a, c in scaled_visit_counts.items()}
     action = random.choices(list(legal_searches.keys()), weights=list(legal_searches.values()))[0]
     return action, legal_searches
 
