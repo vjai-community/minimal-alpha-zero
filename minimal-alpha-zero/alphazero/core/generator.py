@@ -279,10 +279,18 @@ def _expand(node: Node, game: Game, model: Model):
     """
     Evaluate a leaf node by assigning a value to its state and prior probabilities to each of its edges.
     """
-    # TODO: Confirm which value should be used for a terminal state: value predicted by the model or final reward from gameplay.
-    prior_probabilities, value = model.predict_single(node.state.make_input_data())
-    # The prior may contain non-zero probabilities for illegal actions. We need to eliminate those and keep only the legal ones.
-    legal_actions = game.list_legal_actions(node.state)
+    prior_probabilities: dict[Action, float]
+    value = 0.0
+    legal_actions: list[Action]
+    reward = game.receive_reward_if_terminal(node.state)
+    if reward is not None:
+        prior_probabilities, value = {}, reward
+        # There are no legal actions available for a terminal state.
+        legal_actions = []
+    else:
+        prior_probabilities, value = model.predict_single(node.state.make_input_data())
+        # The prior may contain non-zero probabilities for illegal actions. We need to eliminate those and keep only the legal ones.
+        legal_actions = game.list_legal_actions(node.state)
     legal_prior_probabilities = {a: p for a, p in prior_probabilities.items() if a in legal_actions}
     # Create new edges that include prior probabilities only for legal actions.
     for action in legal_actions:

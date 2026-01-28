@@ -50,7 +50,11 @@ class Game(ABC):
 
     @abstractmethod
     def list_legal_actions(self, state: State) -> list[Action]:
-        """ """
+        """
+        TODO:
+        Consider returning an empty list of legal actions for a terminal state.
+        Currently, this is handled externally in `.generator._expand` function.
+        """
 
     @abstractmethod
     def simulate(self, state: State, action: Action) -> State:
