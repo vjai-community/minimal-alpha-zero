@@ -14,7 +14,6 @@ from flax import nnx
 from flax.training.early_stopping import EarlyStopping
 from jax import Array, nn, numpy as jnp
 from jax.scipy.special import entr
-from joblib import Parallel, delayed
 
 from ..core.game import Action, InputData, State, Game, ReplayBuffer
 from ..core.model import ModelConfig, Model
@@ -85,7 +84,7 @@ class MnkInputData(InputData):
 class MnkState(State):
     """ """
 
-    SHOULD_USE_FIXED_COLOR_REPRESENTATION = True
+    SHOULD_USE_FIXED_COLOR_REPRESENTATION = False
 
     board: list[list[Optional[Stone]]]
 
@@ -289,20 +288,38 @@ class MnkModel(nnx.Module, Model):
 
     def __init__(self, m: int, n: int, rngs: nnx.Rngs):
         # Convolutional
-        self.conv = nnx.Conv(self.INPUT_CHANNEL, 16, kernel_size=3, rngs=rngs)
-        self.batch_norm = nnx.BatchNorm(16, rngs=rngs)
-        self.dropout0 = nnx.Dropout(rate=0.025, rngs=rngs)
+        self.stem_conv = nnx.Sequential(
+            nnx.Conv(self.INPUT_CHANNEL, 64, kernel_size=3, rngs=rngs),
+            nnx.BatchNorm(64, rngs=rngs),
+            nnx.relu,
+        )
+        self.body_convs = nnx.List(
+            [
+                nnx.Sequential(
+                    nnx.Conv(64, 64, kernel_size=3, rngs=rngs),
+                    nnx.BatchNorm(64, rngs=rngs),
+                    nnx.relu,
+                ),
+            ]
+        )
         # Fully connected
-        self.linear = nnx.Linear(16 * m * n, 128, rngs=rngs)
-        self.dropout1 = nnx.Dropout(rate=0.025, rngs=rngs)
+        self.fc = nnx.Sequential(
+            nnx.Linear(64 * m * n, 128, rngs=rngs),
+            nnx.relu,
+            nnx.Linear(128, 128, rngs=rngs),
+            nnx.relu,
+        )
         # Heads
         self.prior_probs_head = nnx.Linear(128, m * n, rngs=rngs)
         self.value_head = nnx.Linear(128, 1, rngs=rngs)
 
     def __call__(self, x: Array) -> tuple[Array, Array]:
-        x = self.dropout0(nnx.relu(self.batch_norm(self.conv(x))))
+        x = self.stem_conv(x)
+        for body_conv in self.body_convs:
+            # TODO: Consider adding a residual connection.
+            x = body_conv(x)
         x = x.reshape(x.shape[0], -1)  # Flatten
-        x = self.dropout1(nnx.relu(self.linear(x)))
+        x = self.fc(x)
         prior_probs_output = self.prior_probs_head(x)  # Raw logits
         value_output = nnx.tanh(self.value_head(x)).squeeze(-1)
         return prior_probs_output, value_output
@@ -634,34 +651,3 @@ def augment_data(data: tuple[MnkState, list[float], float]) -> dict[str, tuple[M
         # TODO: Add rotations.
     }
     return augmented_data_list
-
-
-def generate_last_moves(
-    game: MnkGame, games_num: int, workers_num: Optional[int] = None
-) -> list[tuple[MnkState, list[float], float]]:
-    """ """
-
-    def _generate(seed: float) -> tuple[MnkState, list[float], float]:
-        random.seed(seed)
-        state = game.begin()
-        last_move: tuple[MnkState, MnkAction]
-        reward: float
-        while True:
-            reward = game.receive_reward_if_terminal(state)
-            if reward is not None:
-                break
-            action = random.choice(game.list_legal_actions(state))
-            last_move = state, action
-            state = game.simulate(state, action)
-        # Use the same layout as `MnkGame.list_all_actions` method to ensure the same action order.
-        # Please refer to `Model` class for details.
-        state, action = last_move
-        # Prioritize the last action to have the highest probability.
-        probs = [1.0 if x == action.x and y == action.y else 0.0 for y in range(game.n) for x in range(game.m)]
-        return state, probs, reward
-
-    workers_num = workers_num or os.cpu_count() or 1
-    inputs = [(random.random(),) for _ in range(games_num)]  # Use a different random seed for each job
-    last_moves: list[tuple[MnkState, list[float], float]]
-    last_moves = Parallel(n_jobs=workers_num)(delayed(_generate)(*i) for i in inputs)
-    return last_moves
