@@ -30,11 +30,11 @@ logger = logging.getLogger(__name__)
 
 def main():
     # Configs
-    ITERATIONS_NUM = 10
-    ITERATION_STOPPING_PATIENCE = 5
+    ITERATIONS_NUM = 100
+    ITERATION_STOPPING_PATIENCE = 2
     # We want the first player to be able to force a win.
     # Doc: https://en.wikipedia.org/wiki/M,n,k-game#Specific_results.
-    m, n, k = 4, 4, 3
+    m, n, k = 6, 6, 4
     # If we want the first player to be unable to always force a win, but still have a reasonable chance of winning,
     # consider choosing: m, n, k = (5, 5, 4)
     seed = int(time.time() * 1000)
@@ -54,14 +54,14 @@ def main():
     def _calc_temperature(move_index: int) -> float:
         """ """
         MAX_TEMPERATURE = 1.0
-        MIN_TEMPERATURE = 0.1
-        DECAY_MOVES_NUM = int(m * n / 4)
+        MIN_TEMPERATURE = 0.5
+        DECAY_MOVES_NUM = int(m * n / 2)
         temperature = (MIN_TEMPERATURE - MAX_TEMPERATURE) / DECAY_MOVES_NUM * move_index + MAX_TEMPERATURE
         return max(temperature, MIN_TEMPERATURE)
 
     mnk_game = MnkGame(m, n, k)
-    mnk_model_config = ModelConfig(mcts_simulations_num=m * n * 5)  # TODO: Tune this hyperparameter
-    baseline_model_config = ModelConfig(mcts_simulations_num=m * n * 5)
+    mnk_model_config = ModelConfig(mcts_simulations_num=m * n * 10)  # TODO: Tune this hyperparameter
+    baseline_model_config = ModelConfig(mcts_simulations_num=m * n * 10)
     training_play_config = PlayConfig(
         c_puct=c_puct,
         calc_temperature=_calc_temperature,  # TODO: Tune this hyperparameter

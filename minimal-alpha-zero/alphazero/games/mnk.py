@@ -262,18 +262,21 @@ class MnkModel(nnx.Module, NamedModel):
     INPUT_CHANNEL = 1
 
     def __init__(self, m: int, n: int, rngs: nnx.Rngs):
-        self.conv = nnx.Conv(self.INPUT_CHANNEL, 16, kernel_size=3, rngs=rngs)
-        self.batch_norm = nnx.BatchNorm(16, rngs=rngs)
-        self.dropout0 = nnx.Dropout(rate=0.025, rngs=rngs)
-        self.linear = nnx.Linear(16 * m * n, 128, rngs=rngs)
-        self.dropout1 = nnx.Dropout(rate=0.025, rngs=rngs)
+        self.conv0 = nnx.Conv(self.INPUT_CHANNEL, 64, kernel_size=3, rngs=rngs)
+        self.batch_norm0 = nnx.BatchNorm(64, rngs=rngs)
+        self.conv_dropout0 = nnx.Dropout(rate=0.025, rngs=rngs)
+        self.linear0 = nnx.Linear(64 * m * n, 128, rngs=rngs)
+        self.linear_dropout0 = nnx.Dropout(rate=0.025, rngs=rngs)
+        self.linear1 = nnx.Linear(128, 128, rngs=rngs)
+        self.linear_dropout1 = nnx.Dropout(rate=0.025, rngs=rngs)
         self.prior_probs_head = nnx.Linear(128, m * n, rngs=rngs)
         self.value_head = nnx.Linear(128, 1, rngs=rngs)
 
     def __call__(self, x: Array) -> tuple[Array, Array]:
-        x = self.dropout0(nnx.relu(self.batch_norm(self.conv(x))))
+        x = self.conv_dropout0(nnx.relu(self.batch_norm0(self.conv0(x))))
         x = x.reshape(x.shape[0], -1)
-        x = self.dropout1(nnx.relu(self.linear(x)))
+        x = self.linear_dropout0(nnx.relu(self.linear0(x)))
+        x = self.linear_dropout1(nnx.relu(self.linear1(x)))
         prior_probs_output = self.prior_probs_head(x)  # Raw logits
         value_output = nnx.tanh(self.value_head(x)).squeeze(-1)
         return prior_probs_output, value_output
