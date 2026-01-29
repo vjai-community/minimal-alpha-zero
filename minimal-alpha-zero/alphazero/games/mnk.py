@@ -264,20 +264,38 @@ class MnkModel(nnx.Module, Model):
 
     def __init__(self, m: int, n: int, rngs: nnx.Rngs):
         # Convolutional
-        self.conv = nnx.Conv(self.INPUT_CHANNEL, 16, kernel_size=3, rngs=rngs)
-        self.batch_norm = nnx.BatchNorm(16, rngs=rngs)
-        self.dropout0 = nnx.Dropout(rate=0.025, rngs=rngs)
+        self.stem_conv = nnx.Sequential(
+            nnx.Conv(self.INPUT_CHANNEL, 64, kernel_size=3, rngs=rngs),
+            nnx.BatchNorm(64, rngs=rngs),
+            nnx.relu,
+        )
+        self.body_convs = nnx.List(
+            [
+                nnx.Sequential(
+                    nnx.Conv(64, 64, kernel_size=3, rngs=rngs),
+                    nnx.BatchNorm(64, rngs=rngs),
+                    nnx.relu,
+                ),
+            ]
+        )
         # Fully connected
-        self.linear = nnx.Linear(16 * m * n, 128, rngs=rngs)
-        self.dropout1 = nnx.Dropout(rate=0.025, rngs=rngs)
+        self.fc = nnx.Sequential(
+            nnx.Linear(64 * m * n, 128, rngs=rngs),
+            nnx.relu,
+            nnx.Linear(128, 128, rngs=rngs),
+            nnx.relu,
+        )
         # Heads
         self.prior_probs_head = nnx.Linear(128, m * n, rngs=rngs)
         self.value_head = nnx.Linear(128, 1, rngs=rngs)
 
     def __call__(self, x: Array) -> tuple[Array, Array]:
-        x = self.dropout0(nnx.relu(self.batch_norm(self.conv(x))))
+        x = self.stem_conv(x)
+        for body_conv in self.body_convs:
+            # TODO: Consider adding a residual connection.
+            x = body_conv(x)
         x = x.reshape(x.shape[0], -1)  # Flatten
-        x = self.dropout1(nnx.relu(self.linear(x)))
+        x = self.fc(x)
         prior_probs_output = self.prior_probs_head(x)  # Raw logits
         value_output = nnx.tanh(self.value_head(x)).squeeze(-1)
         return prior_probs_output, value_output

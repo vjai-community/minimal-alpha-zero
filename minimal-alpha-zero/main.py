@@ -7,11 +7,19 @@ import random
 import re
 import time
 
+import jax
 from flax import nnx
 
 from alphazero.core.game import ReplayBuffer
 from alphazero.core.model import ModelConfig
-from alphazero.core.generator import PlayConfig, EvaluationConfig, GenerationConfig, evaluate, generate_data
+from alphazero.core.generator import (
+    PlayConfig,
+    EvaluationConfig,
+    NoiseSession,
+    GenerationConfig,
+    evaluate,
+    generate_data,
+)
 from alphazero.games.mnk import (
     MnkGame,
     MnkTrainingConfig,
@@ -38,17 +46,18 @@ logger = logging.getLogger(__name__)
 
 def main():
     # Configs
-    ITERATIONS_NUM = 10
+    ITERATIONS_NUM = 100
     ITERATION_STOPPING_PATIENCE = 2
     # We want the first player to be able to force a win.
     # Doc: https://en.wikipedia.org/wiki/M,n,k-game#Specific_results.
-    m, n, k = 4, 4, 3
+    m, n, k = 6, 6, 4
     # If we want the first player to be unable to always force a win, but still have a reasonable chance of winning,
     # consider choosing: m, n, k = (5, 5, 4)
     seed = int(time.time() * 1000)
     logger.info(f"seed={seed}, run_time={run_time}")
     random.seed(seed)
     rngs = nnx.Rngs(seed)
+    noise_key = jax.random.PRNGKey(seed)
 
     # Initialize the game.
     c_puct = 2.0  # TODO: Tune this hyperparameter
@@ -56,9 +65,9 @@ def main():
     def _calc_temperature(move_index: int) -> float:
         """ """
         MAX_TEMPERATURE = 1.0
-        MIN_TEMPERATURE = 0.1
+        MIN_TEMPERATURE = 0.5
         COOLDOWN_START_INDEX = 0
-        COOLDOWN_END_INDEX = (k - 1) * 2
+        COOLDOWN_END_INDEX = int(m * n / 2)
         if move_index < COOLDOWN_START_INDEX:
             return MAX_TEMPERATURE
         scaler = (move_index - COOLDOWN_START_INDEX) / (COOLDOWN_END_INDEX - COOLDOWN_START_INDEX)
@@ -66,8 +75,8 @@ def main():
         return max(temperature, MIN_TEMPERATURE)
 
     mnk_game = MnkGame(m, n, k)
-    mnk_model_config = ModelConfig(calc_mcts_simulations_num=lambda: m * n * 5)  # TODO: Tune this hyperparameter
-    baseline_model_config = ModelConfig(calc_mcts_simulations_num=lambda: m * n * 5)
+    mnk_model_config = ModelConfig(calc_mcts_simulations_num=lambda: m * n * 10)  # TODO: Tune this hyperparameter
+    baseline_model_config = ModelConfig(calc_mcts_simulations_num=lambda: m * n * 10)
     dummy_model_config = ModelConfig(calc_mcts_simulations_num=lambda: random.randint(m * n * 5, m * n * 20))
     generation_config = GenerationConfig(
         self_plays_num=256,
@@ -75,6 +84,11 @@ def main():
         play_config=PlayConfig(
             c_puct=c_puct,
             calc_temperature=_calc_temperature,  # TODO: Tune this hyperparameter
+        ),
+        noise_session=NoiseSession(
+            key=noise_key,
+            dirichlet_alpha=0.5,  # TODO: Tune this hyperparameter
+            fraction=0.25,
         ),
     )
     dummy_generation_config = copy.deepcopy(generation_config)
@@ -88,6 +102,7 @@ def main():
             # Keep a high temperature for the first two moves (one move per turn for each player),
             # then lower the temperature for the rest to achieve stronger play.
             calc_temperature=lambda i: 1.0 if i <= 1 else 0.1,
+            # calc_temperature=lambda _: 0.1,  # Keep a low temperature for strong play
         ),
         log_competition=log_competition,
     )
@@ -98,7 +113,7 @@ def main():
         stopping_patience=5,
     )
     mnk_network = MnkNetwork(m, n, rngs)
-    replay_buffer = ReplayBuffer()
+    replay_buffer = ReplayBuffer(buffer_queue_size=3)
     dummy_model = DummyModel(m, n)
     with open(run_dir / "config.log", "w") as config_file:
         config_file.write(f"seed={seed}\n")
