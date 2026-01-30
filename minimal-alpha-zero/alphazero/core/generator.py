@@ -56,18 +56,15 @@ class Edge:
 class PlayConfig:
     """ """
 
-    simulations_num: int
     c_puct: float
     calc_temperature: Callable[[int], float]  # τ
 
     def __init__(
         self,
         *,
-        simulations_num: int = 1,
         c_puct: float = 1.0,
         calc_temperature: Callable[[int], float] = lambda _: 1.0,
     ):
-        self.simulations_num = simulations_num
         self.c_puct = c_puct
         self.calc_temperature = calc_temperature
 
@@ -95,7 +92,7 @@ class NoiseSession:
 
 def generate_data(
     game: Game,
-    model: Model,
+    model_spec: tuple[Model, ModelConfig],
     self_plays_num: int,
     play_config: PlayConfig,
     noise_session: Optional[NoiseSession] = None,
@@ -106,7 +103,7 @@ def generate_data(
     i = 0
     while i < self_plays_num:
         # Use the same model for both players during self-play.
-        _, moves, reward = play(game, [(model, ModelConfig())], play_config, noise_session=noise_session)
+        _, moves, reward = play(game, [model_spec], play_config, noise_session=noise_session)
         if len(moves) == 0 or reward is None:
             # Just in case.
             continue
@@ -156,8 +153,16 @@ def play(
         # Search for the probabilities of legal actions for the next move.
         search_probs: dict[Action, float]
         model, model_config = model_specs[i % len(model_specs)]
-        if model_config.should_execute_mcts:
-            _execute_mcts(state_caches[i % len(model_specs)], node, game, model, config, noise_session)
+        if model_config.mcts_simulations_num is not None:
+            _execute_mcts(
+                state_caches[i % len(model_specs)],
+                node,
+                game,
+                model,
+                model_config.mcts_simulations_num,
+                config.c_puct,
+                noise_session,
+            )
             # Select a move according to the search probabilities π computed by MCTS.
             # π(a|s) = N(s,a)^(1/τ) / (∑b N(s,b)^(1/τ))
             scaled_visit_counts = {
@@ -199,7 +204,8 @@ def _execute_mcts(
     node: Node,
     game: Game,
     model: Model,
-    config: PlayConfig,
+    simulations_num: int,
+    c_puct: float,
     noise_session: Optional[NoiseSession],
 ):
     """
@@ -240,13 +246,13 @@ def _execute_mcts(
     # Execute MCTS simulations.
     if node.is_leaf:
         # Run an initial simulation to expand a leaf node.
-        for expanded_state, expanded_node in _execute_one_simulation(node, game, model, config.c_puct).items():
+        for expanded_state, expanded_node in _execute_one_simulation(node, game, model, c_puct).items():
             state_cache[expanded_state] = expanded_node
     # Add noise to the root node.
     if noise_session is not None:
         _add_noise(node, noise_session)
-    while i < config.simulations_num:
-        for expanded_state, expanded_node in _execute_one_simulation(node, game, model, config.c_puct).items():
+    while i < simulations_num:
+        for expanded_state, expanded_node in _execute_one_simulation(node, game, model, c_puct).items():
             state_cache[expanded_state] = expanded_node
         # Next simulation.
         i += 1
