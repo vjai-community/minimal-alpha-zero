@@ -5,10 +5,11 @@ Use the best model to generate data for further training.
 import logging
 import math
 import random
-from typing import Callable, Iterable, Optional
+from typing import Callable, Optional
 
 import jax
 from jax import numpy as jnp
+from joblib import Parallel, delayed
 
 from .game import Action, State, Game
 from .network import ModelConfig, Model
@@ -89,22 +90,23 @@ class NoiseSession:
 
 
 def generate_data(
+    self_plays_num: int,
     game: Game,
     model_spec: tuple[Model, ModelConfig],
-    self_plays_num: int,
     play_config: PlayConfig,
     noise_session: Optional[NoiseSession] = None,
-) -> Iterable[list[tuple[State, list[float], float]]]:
+) -> list[list[tuple[State, list[float], float]]]:
     """
     Continuously retrieve the best model to play games over many self-plays and store the generated data in a buffer.
     """
-    i = 0
-    while i < self_plays_num:
+
+    def _self_play(_self_play_index: int) -> list[tuple[State, list[float], float]]:
+        """ """
         # Use the same model for both players during self-play.
         _, moves, reward = play(game, [model_spec], play_config, noise_session=noise_session)
         if len(moves) == 0 or reward is None:
             # Just in case.
-            continue
+            return []
         data_list: list[tuple[State, list[float], float]] = []
         for j, (state, _, search_probs, _) in enumerate(moves):
             # The sign of reward for each move (positive or negative) alternates based on current player's perspective,
@@ -116,9 +118,11 @@ def generate_data(
             is_current_player_last_mover = (len(moves) - 1 - j) % 2 == 0
             cur_reward = reward * (1 if is_current_player_last_mover else -1)
             data_list.append((state, search_probs, cur_reward))
-        yield data_list
-        # Next self-play.
-        i += 1
+        return data_list
+
+    all_data_list: list[list[tuple[State, list[float], float]]]
+    all_data_list = Parallel(n_jobs=-1)(delayed(_self_play)(i) for i in range(self_plays_num))
+    return all_data_list
 
 
 def play(

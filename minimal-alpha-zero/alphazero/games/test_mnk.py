@@ -74,10 +74,10 @@ class TestMnk:
         mnk_network = MnkNetwork(m, n, mnk_config)
         candidate_model = nnx.clone(mnk_network.get_best_model())
         result = evaluate(
+            mnk_config.competitions_num,
+            mnk_game,
             (mnk_network.get_best_model(), mnk_config.model_config),
             (candidate_model, mnk_config.model_config),
-            mnk_game,
-            mnk_config.competitions_num,
             mnk_config.play_config,
         )
         assert abs(result) < mnk_config.competition_margin

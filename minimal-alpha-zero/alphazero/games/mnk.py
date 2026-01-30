@@ -14,6 +14,7 @@ import optax
 from flax import nnx
 from flax.training.early_stopping import EarlyStopping
 from jax import Array, nn, numpy as jnp
+from joblib import Parallel, delayed
 
 from ..core.game import Action, InputData, State, Game, ReplayBuffer
 from ..core.network import ModelConfig, Model, Network
@@ -397,10 +398,10 @@ class MnkNetwork(Network):
         self.best_model.eval()  # Switch to eval mode
         candidate_model.eval()  # Switch to eval mode
         result = evaluate(
+            self.config.competitions_num,
+            game,
             (self.best_model, self.config.model_config),
             (candidate_model, self.config.model_config),
-            game,
-            self.config.competitions_num,
             self.config.play_config,
             output_dir=output_dir / EVALUATION_BEST_CANDIDATE_DIR_NAME,
         )
@@ -471,10 +472,10 @@ def _train_one_epoch(
 
 
 def evaluate(
+    competitions_num: int,
+    game: MnkGame,
     model_spec1: tuple[NamedModel, ModelConfig],
     model_spec2: tuple[NamedModel, ModelConfig],
-    game: MnkGame,
-    competitions_num: int,
     play_config: PlayConfig,
     output_dir: Optional[os.PathLike] = None,
 ) -> float:
@@ -498,26 +499,22 @@ def evaluate(
         result = -1.0 if is_model1_last_mover == (reward > 0) else 1.0
         return last_state, moves, result
 
-    if output_dir is not None:
-        os.makedirs(output_dir, exist_ok=True)
-    model1, _ = model_spec1
-    model2, _ = model_spec2
-    result = 0.0
-    for i in range(competitions_num):
-        is_model1_first_mover = i % 2 == 0
+    def _launch_one_competition(competition_index: int) -> float:
+        """ """
+        is_model1_first_mover = competition_index % 2 == 0
         last_state: State
         moves: list[tuple[State, list[float], list[float], float]]
-        cur_result: float
+        result: float
         # Two models take turns having the first move in each competition.
         if is_model1_first_mover:
             last_state, moves, cur_result = _compete_one_game(model_spec1, model_spec2)
-            result += cur_result
+            result = cur_result
         else:
             last_state, moves, cur_result = _compete_one_game(model_spec2, model_spec1)
-            result -= cur_result
+            result = -cur_result
         # Log the moves.
         if output_dir is not None:
-            competition_file_path = output_dir / f"competition-{i:0{len(str(competitions_num))}d}.txt"
+            competition_file_path = output_dir / f"competition-{competition_index:0{len(str(competitions_num))}d}.txt"
             with open(competition_file_path, "w") as competition_file:
                 for j, (state, prior_probs, search_probs, value) in enumerate(moves):
                     is_in_red_turn = j % 2 == 0  # Red always moves first. Ref: `MnkGame.simulate` method.
@@ -538,7 +535,15 @@ def evaluate(
                     else f"Winner: {model1.name if is_model1_first_mover == (cur_result < 0) else model2.name}"
                 )
                 competition_file.write("\n")
-    result /= competitions_num
+        return result
+
+    if output_dir is not None:
+        os.makedirs(output_dir, exist_ok=True)
+    model1, _ = model_spec1
+    model2, _ = model_spec2
+    results: list[float]
+    results = Parallel(n_jobs=-1)(delayed(_launch_one_competition)(i) for i in range(competitions_num))
+    result = sum(results) / competitions_num
     # Log the result.
     if output_dir is not None:
         with open(output_dir / "@result.txt", "w") as result_file:
