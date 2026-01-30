@@ -92,10 +92,10 @@ def main():
 
     # Training and evaluating.
     evaluate(
+        mnk_config.competitions_num,
+        mnk_game,
         (dummy_model, baseline_model_config),
         (mnk_network.get_best_model(), mnk_config.model_config),
-        mnk_game,
-        mnk_config.competitions_num,
         mnk_config.play_config,
         output_dir=run_dir / "initial" / EVALUATION_DUMMY_BEST_DIR_NAME,
     )
@@ -108,7 +108,7 @@ def main():
         os.makedirs(data_output_dir, exist_ok=True)
         j = 0
         for data_list in generate_data(
-            mnk_game, (mnk_network.get_best_model(), mnk_config.model_config), self_plays_num, training_play_config
+            self_plays_num, mnk_game, (mnk_network.get_best_model(), mnk_config.model_config), training_play_config
         ):
             data_file_name = f"self_play-{j:0{len(str(self_plays_num))}d}"
             # Store and log the training data.
@@ -142,10 +142,10 @@ def main():
         # Clear the replay buffer after updating the best model.
         if is_best_model_updated:
             evaluate(
+                mnk_config.competitions_num,
+                mnk_game,
                 (dummy_model, baseline_model_config),
                 (mnk_network.get_best_model(), mnk_config.model_config),
-                mnk_game,
-                mnk_config.competitions_num,
                 mnk_config.play_config,
                 output_dir=output_dir / EVALUATION_DUMMY_BEST_DIR_NAME,
             )

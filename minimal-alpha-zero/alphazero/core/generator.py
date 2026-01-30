@@ -4,11 +4,13 @@ Use the best model to generate data for further training.
 
 import logging
 import math
+import os
 import random
 from typing import Callable, Iterable, Optional
 
 import jax
 from jax import numpy as jnp
+from joblib import Parallel, delayed
 
 from .game import Action, State, Game
 from .network import ModelConfig, Model
@@ -89,24 +91,32 @@ class NoiseSession:
         self.dirichlet_alpha = dirichlet_alpha
         self.fraction = fraction
 
+    def split(self) -> "NoiseSession":
+        key, subkey = jax.random.split(self.key)
+        self.key = key
+        return NoiseSession(key=subkey, dirichlet_alpha=self.dirichlet_alpha, fraction=self.fraction)
+
 
 def generate_data(
+    self_plays_num: int,
     game: Game,
     model_spec: tuple[Model, ModelConfig],
-    self_plays_num: int,
     play_config: PlayConfig,
     noise_session: Optional[NoiseSession] = None,
+    workers_num: Optional[int] = None,
 ) -> Iterable[list[tuple[State, list[float], float]]]:
     """
     Continuously play games over many self-plays to generate data.
     """
-    i = 0
-    while i < self_plays_num:
+
+    def _self_play(noise_session: Optional[NoiseSession], seed: float) -> list[tuple[State, list[float], float]]:
+        """ """
+        random.seed(seed)
         # Use the same model for both players during self-play.
         _, moves, reward = play(game, [model_spec], play_config, noise_session=noise_session)
         if len(moves) == 0 or reward is None:
             # Just in case.
-            continue
+            return []
         data_list: list[tuple[State, list[float], float]] = []
         for j, (state, _, search_probs, _) in enumerate(moves):
             # The sign of reward for each move (positive or negative) alternates based on current player's perspective,
@@ -118,9 +128,20 @@ def generate_data(
             is_current_player_last_mover = (len(moves) - 1 - j) % 2 == 0
             cur_reward = reward * (1 if is_current_player_last_mover else -1)
             data_list.append((state, search_probs, cur_reward))
-        yield data_list
-        # Next self-play.
-        i += 1
+        return data_list
+
+    # Divide into smaller segments to gradually handle the generated data.
+    SEGMENT_SIZE = workers_num or os.cpu_count() or 1
+    self_play_indices = list(range(self_plays_num))
+    for i in range(0, self_plays_num, SEGMENT_SIZE):
+        inputs: list[tuple[Optional[NoiseSession], float]] = []
+        for _ in self_play_indices[i : i + SEGMENT_SIZE]:
+            # Use a different session and random seed for each job.
+            inputs.append((noise_session.split() if noise_session is not None else None, random.random()))
+        aggregated_data_list: list[list[tuple[State, list[float], float]]]
+        aggregated_data_list = Parallel(n_jobs=SEGMENT_SIZE)(delayed(_self_play)(*i) for i in inputs)
+        for data_list in aggregated_data_list:
+            yield data_list
 
 
 def play(
@@ -330,8 +351,7 @@ def _add_noise(node: Node, session: NoiseSession):
     """
     Add Dirichlet noise to the prior probabilities.
     """
-    key, subkey = jax.random.split(session.key)
-    session.key = key
-    noises = jax.random.dirichlet(subkey, jnp.full((len(node.children),), session.dirichlet_alpha))
+    key = session.split().key  # Create a new session with a new key
+    noises = jax.random.dirichlet(key, jnp.full((len(node.children),), session.dirichlet_alpha))
     for edge, noise in zip(node.children.values(), noises):
         edge.prior_prob = edge.prior_prob * (1 - session.fraction) + session.fraction * noise
