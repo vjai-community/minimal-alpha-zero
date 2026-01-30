@@ -14,6 +14,7 @@ import optax
 from flax import nnx
 from flax.training.early_stopping import EarlyStopping
 from jax import Array, nn, numpy as jnp
+from joblib import Parallel, delayed
 
 from ..core.game import Action, InputData, State, Game, ReplayBuffer
 from ..core.network import ModelConfig, Model, Network
@@ -369,7 +370,13 @@ class MnkNetwork(Network):
         self.best_model.set_name("best")
         self.config = config
 
-    def train_and_evaluate(self, replay_buffer: ReplayBuffer, game: MnkGame, output_dir: os.PathLike) -> bool:
+    def train_and_evaluate(
+        self,
+        replay_buffer: ReplayBuffer,
+        game: MnkGame,
+        output_dir: os.PathLike,
+        workers_num: Optional[int] = None,
+    ) -> bool:
         """ """
         # Train a new candidate model.
         candidate_model = nnx.clone(self.best_model)
@@ -400,12 +407,13 @@ class MnkNetwork(Network):
         self.best_model.eval()  # Switch to eval mode
         candidate_model.eval()  # Switch to eval mode
         result = evaluate(
+            self.config.competitions_num,
+            game,
             (self.best_model, self.config.model_config),
             (candidate_model, self.config.model_config),
-            game,
-            self.config.competitions_num,
             self.config.play_config,
             output_dir=output_dir / EVALUATION_BEST_CANDIDATE_DIR_NAME,
+            workers_num=workers_num,
         )
         is_best_model_updated = False
         if result > 0 and abs(result) > self.config.competition_margin:
@@ -475,16 +483,19 @@ class MnkNetwork(Network):
 
 
 def evaluate(
+    competitions_num: int,
+    game: MnkGame,
     model_spec1: tuple[NamedModel, ModelConfig],
     model_spec2: tuple[NamedModel, ModelConfig],
-    game: MnkGame,
-    competitions_num: int,
     play_config: PlayConfig,
     output_dir: Optional[os.PathLike] = None,
+    workers_num: Optional[int] = None,
 ) -> float:
     """
     Return a result close to -1 if `model_spec1` is better, and close to 1 if `model2` is better.
     """
+    model1, _ = model_spec1
+    model2, _ = model_spec2
 
     def _compete_one_game(
         model_spec1: tuple[Model, ModelConfig], model_spec2: tuple[Model, ModelConfig]
@@ -502,26 +513,23 @@ def evaluate(
         result = -1.0 if is_model1_last_mover == (reward > 0) else 1.0
         return last_state, moves, result
 
-    if output_dir is not None:
-        os.makedirs(output_dir, exist_ok=True)
-    model1, _ = model_spec1
-    model2, _ = model_spec2
-    result = 0.0
-    for i in range(competitions_num):
-        is_model1_first_mover = i % 2 == 0
+    def _launch_one_competition(competition_index: int, seed: float) -> float:
+        """ """
+        random.seed(seed)
+        is_model1_first_mover = competition_index % 2 == 0
         last_state: State
         moves: list[tuple[State, list[float], list[float], float]]
-        cur_result: float
+        result: float
         # Two models take turns having the first move in each competition.
         if is_model1_first_mover:
             last_state, moves, cur_result = _compete_one_game(model_spec1, model_spec2)
-            result += cur_result
+            result = cur_result
         else:
             last_state, moves, cur_result = _compete_one_game(model_spec2, model_spec1)
-            result -= cur_result
+            result = -cur_result
         # Log the moves.
         if output_dir is not None:
-            competition_file_path = output_dir / f"competition-{i:0{len(str(competitions_num))}d}.txt"
+            competition_file_path = output_dir / f"competition-{competition_index:0{len(str(competitions_num))}d}.txt"
             with open(competition_file_path, "w") as competition_file:
                 for j, (state, prior_probs, search_probs, value) in enumerate(moves):
                     is_in_red_turn = j % 2 == 0  # Red always moves first. Ref: `MnkGame.simulate` method.
@@ -542,7 +550,15 @@ def evaluate(
                     else f"Winner: {model1.name if is_model1_first_mover == (cur_result < 0) else model2.name}"
                 )
                 competition_file.write("\n")
-    result /= competitions_num
+        return result
+
+    if output_dir is not None:
+        os.makedirs(output_dir, exist_ok=True)
+    workers_num = workers_num or os.cpu_count() or 1
+    inputs = [(i, random.random()) for i in range(competitions_num)]  # Use a different random seed for each job
+    results: list[float]
+    results = Parallel(n_jobs=workers_num)(delayed(_launch_one_competition)(*i) for i in inputs)
+    result = sum(results) / competitions_num
     # Log the result.
     if output_dir is not None:
         with open(output_dir / "@result.txt", "w") as result_file:
