@@ -56,8 +56,8 @@ class TestMnk:
         """ """
         m, n, k = 4, 4, 3
         mnk_game = MnkGame(m, n, k)
+        mnk_model_config = ModelConfig(mcts_simulations_num=m * n * 5)
         play_config = PlayConfig(
-            simulations_num=m * n * 5,
             c_puct=2.0,
             calc_temperature=lambda _: 0.1,  # Lower temperature for stronger play
         )
@@ -66,16 +66,16 @@ class TestMnk:
             epochs_num=100,
             batch_size=128,
             stopping_patience=5,
-            should_evaluation_execute_mcts=True,
             competitions_num=250,
             competition_margin=0.1,
+            model_config=mnk_model_config,
             play_config=play_config,
         )
         mnk_network = MnkNetwork(m, n, mnk_config)
         candidate_model = nnx.clone(mnk_network.get_best_model())
         result = evaluate(
-            (mnk_network.get_best_model(), ModelConfig()),
-            (candidate_model, ModelConfig()),
+            (mnk_network.get_best_model(), mnk_config.model_config),
+            (candidate_model, mnk_config.model_config),
             mnk_game,
             mnk_config.competitions_num,
             mnk_config.play_config,

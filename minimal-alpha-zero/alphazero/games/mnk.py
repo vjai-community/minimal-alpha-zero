@@ -316,14 +316,18 @@ class DummyModel(NamedModel):
 class MnkConfig:
     """ """
 
+    # Training hyperparameters
     learning_rate: float
     epochs_num: int
     batch_size: int
     stopping_patience: int
-    should_evaluation_execute_mcts: bool
+
+    # Evaluation hyperparameters
     competitions_num: int
     competition_margin: float  # Should be positive and less than 1
+    model_config: ModelConfig
     play_config: PlayConfig
+
     rngs: nnx.Rngs
 
     def __init__(
@@ -333,9 +337,9 @@ class MnkConfig:
         epochs_num: int,
         batch_size: int,
         stopping_patience: int,
-        should_evaluation_execute_mcts: bool,
         competitions_num: int,
         competition_margin: float,
+        model_config: ModelConfig,
         play_config: PlayConfig,
         rngs: nnx.Rngs = nnx.Rngs(0),
     ):
@@ -343,9 +347,9 @@ class MnkConfig:
         self.epochs_num = epochs_num
         self.batch_size = batch_size
         self.stopping_patience = stopping_patience
-        self.should_evaluation_execute_mcts = should_evaluation_execute_mcts
         self.competitions_num = competitions_num
         self.competition_margin = competition_margin
+        self.model_config = model_config
         self.play_config = play_config
         self.rngs = rngs
 
@@ -396,8 +400,8 @@ class MnkNetwork(Network):
         self.best_model.eval()  # Switch to eval mode
         candidate_model.eval()  # Switch to eval mode
         result = evaluate(
-            (self.best_model, ModelConfig(should_execute_mcts=self.config.should_evaluation_execute_mcts)),
-            (candidate_model, ModelConfig(should_execute_mcts=self.config.should_evaluation_execute_mcts)),
+            (self.best_model, self.config.model_config),
+            (candidate_model, self.config.model_config),
             game,
             self.config.competitions_num,
             self.config.play_config,
@@ -409,15 +413,6 @@ class MnkNetwork(Network):
             # The candidate model becomes the new best model.
             self.best_model = candidate_model
             self.best_model.set_name("best")
-            dummy_model = DummyModel(self.m, self.n)
-            evaluate(
-                (dummy_model, ModelConfig()),  # Always execute MCTS for the dummy model
-                (self.best_model, ModelConfig(should_execute_mcts=self.config.should_evaluation_execute_mcts)),
-                game,
-                self.config.competitions_num,
-                self.config.play_config,
-                output_dir=output_dir / EVALUATION_DUMMY_BEST_DIR_NAME,
-            )
         return is_best_model_updated
 
     def get_best_model(self) -> MnkModel:

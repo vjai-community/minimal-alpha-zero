@@ -1,5 +1,6 @@
 import os
 from abc import ABC, abstractmethod
+from typing import Optional
 
 from .game import Action, InputData, Game, ReplayBuffer
 
@@ -7,14 +8,14 @@ from .game import Action, InputData, Game, ReplayBuffer
 class ModelConfig:
     """ """
 
-    should_execute_mcts: bool
+    mcts_simulations_num: Optional[int]
 
     def __init__(
         self,
         *,
-        should_execute_mcts: bool = True,
+        mcts_simulations_num: Optional[int] = 1,
     ):
-        self.should_execute_mcts = should_execute_mcts
+        self.mcts_simulations_num = mcts_simulations_num
 
 
 class Model(ABC):
