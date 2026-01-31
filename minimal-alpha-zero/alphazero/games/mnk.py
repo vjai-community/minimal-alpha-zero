@@ -10,6 +10,7 @@ from abc import ABC
 from enum import Enum
 from typing import Optional
 
+import jax
 import optax
 from flax import nnx
 from flax.training.early_stopping import EarlyStopping
@@ -366,6 +367,9 @@ class MnkNetwork(Network):
         self.best_model = MnkModel(m, n, config.rngs)
         self.best_model.set_name("best")
         self.config = config
+        model_params = nnx.state(self.best_model, nnx.Param)
+        model_params_num = sum(jnp.prod(jnp.array(x.shape)) for x in jax.tree_util.tree_leaves(model_params))
+        logger.info(f"model_params_num={model_params_num}")
 
     def train_and_evaluate(self, replay_buffer: ReplayBuffer, game: MnkGame, output_dir: os.PathLike) -> bool:
         """ """
