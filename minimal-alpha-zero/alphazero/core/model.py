@@ -37,8 +37,8 @@ class Model(ABC):
     def predict_single(self, input_data: InputData) -> tuple[dict[Action, float], float]:
         """
         Predict prior probabilities (policy over all actions, including illegal ones) and value of a given state.
-        The value will then be trained to be close to 1 if the current player is predicted to win,
-        in contrast, it should tend toward -1 if the opponent is predicted to win.
+        The value will then be trained to be positive if the current player is predicted to win,
+        in contrast, it should tend toward negative if the opponent is predicted to win.
         NOTE:
         In the paper "Mastering the game of Go without human knowledge", authors use "evaluate",
         but I prefer "predict" to distinguish it from "evaluator", which is used for choosing the best model.

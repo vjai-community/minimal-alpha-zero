@@ -137,11 +137,17 @@ class MnkGame(Game):
     k: int  # Number of stones to connect
     initial_stones_num: int
 
-    def __init__(self, m: int, n: int, k: int, initial_stones_num: int = 0):
+    # With some choices of m, n, k, it is probably too easy for the first player to win.
+    # Hence, we give the winner a larger reward if the game ends quickly and a smaller reward if it lasts longer,
+    # hopefully encouraging the second player to prolong the game as much as possible to reduce the reward their opponent receives.
+    should_prefer_fast_win: bool
+
+    def __init__(self, m: int, n: int, k: int, initial_stones_num: int = 0, should_prefer_fast_win: bool = False):
         self.m = m
         self.n = n
         self.k = k
         self.initial_stones_num = initial_stones_num
+        self.should_prefer_fast_win = should_prefer_fast_win
 
     def begin(self) -> MnkState:
         """ """
@@ -200,6 +206,11 @@ class MnkGame(Game):
 
     def receive_reward_if_terminal(self, state: MnkState) -> Optional[float]:
         """ """
+        reward = 1.0  # Reward when there is a winner
+        if self.should_prefer_fast_win:
+            # Adjust the reward based on the number of stones.
+            # max reward (1) = `k * 2` stones (fastest win), min reward (0) = `m * n` stones (board full).
+            reward = min((state.stone_count - self.m * self.n) / (self.k * 2 - self.m * self.n), 1.0)
         # The board is empty.
         if state.last_action is None:
             return None  # Not terminal
@@ -210,21 +221,21 @@ class MnkGame(Game):
         ## The horizontal row.
         row = [state.board[last_y][x] for x in range(m)]
         if self._check_consecutive_stones(row, last_color, k):
-            return 1.0
+            return reward
         ## The vertical row.
         row = [state.board[y][last_x] for y in range(n)]
         if self._check_consecutive_stones(row, last_color, k):
-            return 1.0
+            return reward
         ## The upward diagonal row.
         left_x, left_y = (last_x - last_y, 0) if last_x >= last_y else (0, last_y - last_x)
         row = [state.board[left_y + i][left_x + i] for i in range(min(n - left_y, m - left_x))]
         if self._check_consecutive_stones(row, last_color, k):
-            return 1.0
+            return reward
         ## The downward diagonal row.
         left_x, left_y = (last_x - (n - 1 - last_y), n - 1) if last_x >= n - 1 - last_y else (0, last_y + last_x)
         row = [state.board[left_y - i][left_x + i] for i in range(min(left_y + 1, m - left_x))]
         if self._check_consecutive_stones(row, last_color, k):
-            return 1.0
+            return reward
         # Declare a draw if the board is full. Otherwise, it is not in a terminal state.
         is_full = state.stone_count == m * n
         return 0.0 if is_full else None

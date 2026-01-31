@@ -314,8 +314,8 @@ def _expand(node: Node, game: Game, model: Model):
     if reward is not None:
         # The minus sign in `-reward` indicates that the current state's value has the opposite sign of the reward,
         # since the current state belongs to the current player, but the reward comes from the opponent's last move.
-        # For example, if a state is terminal and has a reward of `1`, it means the opponent won with the last move,
-        # so the current player lost, and the current state's value is `-1`.
+        # For example, if a state is terminal and has a positive reward, it means the opponent won with the last move,
+        # so the current player lost, and the current state's value is negative.
         # Ref: `.game.Game.receive_reward_if_terminal` method.
         prior_probs, value = {}, -reward
         # There are no legal actions available for a terminal state.

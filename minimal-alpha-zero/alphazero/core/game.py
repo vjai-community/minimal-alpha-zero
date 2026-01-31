@@ -65,7 +65,8 @@ class Game(ABC):
     @abstractmethod
     def receive_reward_if_terminal(self, state: State) -> Optional[float]:
         """
-        If the state is terminal, return a final reward of 1 if the last player wins, -1 if they lose, and 0 in the case of a draw.
+        If the state is terminal, return a final reward with a positive value if the last player wins,
+        a negative value if they lose, and 0 in the case of a draw.
         If the state is not terminal, return `None`.
         NOTE:
         Remember, the reward is not assigned to this state, but to the move made by the last player,
