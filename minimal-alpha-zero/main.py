@@ -136,7 +136,7 @@ def main():
                         state, search_probs, reward = data
                         data_file.write(f"{state}\n")
                         data_file.write(f"Search probabilities:\n{format_board(search_probs, m)}\n")
-                        data_file.write(f"Reward: {reward}\n")
+                        data_file.write(f"Reward: {reward:.2f}\n")
                         data_file.write("\n")
                         data_file.flush()
             j += 1
