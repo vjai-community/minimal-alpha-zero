@@ -45,7 +45,7 @@ class Game(ABC):
     @abstractmethod
     def list_all_actions(self) -> list[Action]:
         """
-        The order of actions is important. Ref: `.network.Model` class.
+        The order of actions is important. Ref: `.model.Model` class.
         """
 
     @abstractmethod

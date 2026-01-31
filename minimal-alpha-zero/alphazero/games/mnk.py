@@ -17,7 +17,7 @@ from jax import Array, nn, numpy as jnp
 from joblib import Parallel, delayed
 
 from ..core.game import Action, InputData, State, Game, ReplayBuffer
-from ..core.network import ModelConfig, Model, Network
+from ..core.model import ModelConfig, Model
 from ..core.generator import PlayConfig, play
 
 
@@ -289,7 +289,7 @@ class MnkModel(nnx.Module, NamedModel):
         for y in range(n):
             for x in range(m):
                 # Use the same layout as `MnkGame.list_all_actions` method to ensure the same action order.
-                # Please refer to `..core.network.Model` class for details.
+                # Please refer to `..core.model.Model` class for details.
                 prior_probs[MnkAction(x, y)] = prior_probs_output[y * m + x].item()
         value: float = value_output.item()
         return prior_probs, value
@@ -358,7 +358,7 @@ class MnkEvaluationConfig:
         self.play_config = play_config
 
 
-class MnkNetwork(Network):
+class MnkNetwork:
     """ """
 
     m: int  # Number of columns
@@ -627,7 +627,7 @@ def augment_data(data: tuple[MnkState, list[float], float]) -> dict[str, tuple[M
         return new_state
 
     # `_flip_probs_*` functions use the same layout as `MnkGame.list_all_actions` method to ensure the same action order.
-    # Please refer to `..core.network.Model` class for details.
+    # Please refer to `..core.model.Model` class for details.
 
     def _flip_probs_vertically(probs: list[float]) -> list[float]:
         """ """

@@ -13,7 +13,7 @@ from jax import numpy as jnp
 from joblib import Parallel, delayed
 
 from .game import Action, State, Game
-from .network import ModelConfig, Model
+from .model import ModelConfig, Model
 
 
 logger = logging.getLogger(__name__)
