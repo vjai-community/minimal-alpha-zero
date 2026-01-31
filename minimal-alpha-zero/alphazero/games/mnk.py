@@ -314,22 +314,13 @@ class DummyModel(NamedModel):
         return prior_probs, value
 
 
-class MnkConfig:
+class MnkTrainingConfig:
     """ """
 
-    # Training hyperparameters
     learning_rate: float
     epochs_num: int
     batch_size: int
     stopping_patience: int
-
-    # Evaluation hyperparameters
-    competitions_num: int
-    competition_margin: float  # Should be positive and less than 1
-    model_config: ModelConfig
-    play_config: PlayConfig
-
-    rngs: nnx.Rngs
 
     def __init__(
         self,
@@ -338,21 +329,33 @@ class MnkConfig:
         epochs_num: int,
         batch_size: int,
         stopping_patience: int,
-        competitions_num: int,
-        competition_margin: float,
-        model_config: ModelConfig,
-        play_config: PlayConfig,
-        rngs: nnx.Rngs = nnx.Rngs(0),
     ):
         self.learning_rate = learning_rate
         self.epochs_num = epochs_num
         self.batch_size = batch_size
         self.stopping_patience = stopping_patience
+
+
+class MnkEvaluationConfig:
+    """ """
+
+    competitions_num: int
+    competition_margin: float  # Should be positive and less than 1
+    game: MnkGame
+    play_config: PlayConfig
+
+    def __init__(
+        self,
+        *,
+        competitions_num: int,
+        competition_margin: float,
+        game: MnkGame,
+        play_config: PlayConfig,
+    ):
         self.competitions_num = competitions_num
         self.competition_margin = competition_margin
-        self.model_config = model_config
+        self.game = game
         self.play_config = play_config
-        self.rngs = rngs
 
 
 class MnkNetwork(Network):
@@ -361,19 +364,20 @@ class MnkNetwork(Network):
     m: int  # Number of columns
     n: int  # Number of rows
     best_model: MnkModel
-    config: MnkConfig
+    rngs: nnx.Rngs
 
-    def __init__(self, m: int, n: int, config: MnkConfig):
+    def __init__(self, m: int, n: int, rngs: nnx.Rngs = nnx.Rngs(0)):
         self.m = m
         self.n = n
-        self.best_model = MnkModel(m, n, config.rngs)
+        self.best_model = MnkModel(m, n, rngs)
         self.best_model.set_name("best")
-        self.config = config
 
     def train_and_evaluate(
         self,
         replay_buffer: ReplayBuffer,
-        game: MnkGame,
+        training_config: MnkTrainingConfig,
+        evaluation_config: MnkEvaluationConfig,
+        model_config: ModelConfig,
         output_dir: os.PathLike,
         workers_num: Optional[int] = None,
     ) -> bool:
@@ -382,15 +386,15 @@ class MnkNetwork(Network):
         candidate_model = nnx.clone(self.best_model)
         candidate_model.set_name("candidate")
         candidate_model.train()  # Switch to train mode
-        optimizer = nnx.Optimizer(candidate_model, optax.adamw(self.config.learning_rate), wrt=nnx.Param)
-        early_stopping = EarlyStopping(patience=self.config.stopping_patience)
+        optimizer = nnx.Optimizer(candidate_model, optax.adamw(training_config.learning_rate), wrt=nnx.Param)
+        early_stopping = EarlyStopping(patience=training_config.stopping_patience)
         with open(output_dir / "metric.csv", "a") as metric_file:
             metric_writer = csv.DictWriter(metric_file, ["epoch", "train_loss", "val_loss"])
             metric_writer.writeheader()
             i = 0
             while True:
                 data_list = [(s.make_input_data(), p, w) for (s, p, w) in replay_buffer.buffer]
-                metric_record = self._train_one_epoch(candidate_model, optimizer, data_list, self.config.batch_size)
+                metric_record = self._train_one_epoch(candidate_model, optimizer, data_list, training_config.batch_size)
                 # Log the metrics.
                 metric_row = {"epoch": i}
                 for name, value in metric_record.items():
@@ -399,25 +403,21 @@ class MnkNetwork(Network):
                 metric_file.flush()
                 # Check stopping condition.
                 early_stopping = early_stopping.update(metric_record["val_loss"])
-                if early_stopping.should_stop or i >= self.config.epochs_num - 1:
+                if early_stopping.should_stop or i >= training_config.epochs_num - 1:
                     break
                 # Next epoch.
                 i += 1
         # Evaluate the candidate model against the current best model.
         self.best_model.eval()  # Switch to eval mode
         candidate_model.eval()  # Switch to eval mode
-        result = evaluate(
-            self.config.competitions_num,
-            game,
-            (self.best_model, self.config.model_config),
-            (candidate_model, self.config.model_config),
-            self.config.play_config,
+        is_best_model_updated = evaluate(
+            (self.best_model, model_config),
+            (candidate_model, model_config),
+            evaluation_config,
             output_dir=output_dir / EVALUATION_BEST_CANDIDATE_DIR_NAME,
             workers_num=workers_num,
         )
-        is_best_model_updated = False
-        if result > 0 and abs(result) > self.config.competition_margin:
-            is_best_model_updated = True
+        if is_best_model_updated:
             # The candidate model becomes the new best model.
             self.best_model = candidate_model
             self.best_model.set_name("best")
@@ -483,19 +483,19 @@ class MnkNetwork(Network):
 
 
 def evaluate(
-    competitions_num: int,
-    game: MnkGame,
     model_spec1: tuple[NamedModel, ModelConfig],
     model_spec2: tuple[NamedModel, ModelConfig],
-    play_config: PlayConfig,
+    config: MnkEvaluationConfig,
     output_dir: Optional[os.PathLike] = None,
     workers_num: Optional[int] = None,
-) -> float:
+) -> Optional[bool]:
     """
-    Return a result close to -1 if `model_spec1` is better, and close to 1 if `model2` is better.
+    Return `False` if `model_spec1` is better by the given margin, `True` if `model_spec2` is better by the given margin,
+    and `None` otherwise.
     """
     model1, _ = model_spec1
     model2, _ = model_spec2
+    competitions_num, game, play_config = (config.competitions_num, config.game, config.play_config)
 
     def _compete_one_game(
         model_spec1: tuple[Model, ModelConfig], model_spec2: tuple[Model, ModelConfig]
@@ -564,7 +564,10 @@ def evaluate(
         with open(output_dir / "@result.txt", "w") as result_file:
             result_file.write(f"model1={model1.name}, model2={model2.name}, result={result}\n")
     logger.info(f"model1={model1.name}, model2={model2.name}, result={result}")
-    return result
+    if abs(result) >= config.competition_margin:
+        return result > 0
+    else:
+        return None
 
 
 def format_board(flattened_board: list[float], m: int) -> str:

@@ -12,7 +12,8 @@ from alphazero.core.network import ModelConfig
 from alphazero.core.generator import PlayConfig, generate_data
 from alphazero.games.mnk import (
     MnkGame,
-    MnkConfig,
+    MnkTrainingConfig,
+    MnkEvaluationConfig,
     MnkNetwork,
     DummyModel,
     evaluate,
@@ -75,28 +76,27 @@ def main():
         # then lower the temperature for the rest to achieve stronger play.
         calc_temperature=lambda i: 1.0 if i <= 1 else 0.1,
     )
-    mnk_config = MnkConfig(
+    mnk_training_config = MnkTrainingConfig(
         learning_rate=0.0005,
         epochs_num=100,
         batch_size=128,
         stopping_patience=5,
+    )
+    mnk_evaluation_config = MnkEvaluationConfig(
         competitions_num=250,
         competition_margin=0.1,
-        model_config=mnk_model_config,
+        game=mnk_game,
         play_config=evaluation_play_config,
-        rngs=rngs,
     )
-    mnk_network = MnkNetwork(m, n, mnk_config)
+    mnk_network = MnkNetwork(m, n, rngs)
     replay_buffer = ReplayBuffer()
     dummy_model = DummyModel(m, n)
 
     # Training and evaluating.
     evaluate(
-        mnk_config.competitions_num,
-        mnk_game,
         (dummy_model, baseline_model_config),
-        (mnk_network.get_best_model(), mnk_config.model_config),
-        mnk_config.play_config,
+        (mnk_network.get_best_model(), mnk_model_config),
+        mnk_evaluation_config,
         output_dir=run_dir / "initial" / EVALUATION_DUMMY_BEST_DIR_NAME,
     )
     i = 0
@@ -108,7 +108,10 @@ def main():
         os.makedirs(data_output_dir, exist_ok=True)
         j = 0
         for data_list in generate_data(
-            self_plays_num, mnk_game, (mnk_network.get_best_model(), mnk_config.model_config), training_play_config
+            self_plays_num,
+            mnk_game,
+            (mnk_network.get_best_model(), mnk_model_config),
+            training_play_config,
         ):
             data_file_name = f"self_play-{j:0{len(str(self_plays_num))}d}"
             # Store and log the training data.
@@ -138,15 +141,15 @@ def main():
                         data_file.flush()
             j += 1
         logger.info(f"replay_buffer_len={len(replay_buffer.buffer)}")
-        is_best_model_updated = mnk_network.train_and_evaluate(replay_buffer, mnk_game, output_dir)
+        is_best_model_updated = mnk_network.train_and_evaluate(
+            replay_buffer, mnk_training_config, mnk_evaluation_config, mnk_model_config, output_dir
+        )
         # Clear the replay buffer after updating the best model.
         if is_best_model_updated:
             evaluate(
-                mnk_config.competitions_num,
-                mnk_game,
                 (dummy_model, baseline_model_config),
-                (mnk_network.get_best_model(), mnk_config.model_config),
-                mnk_config.play_config,
+                (mnk_network.get_best_model(), mnk_model_config),
+                mnk_evaluation_config,
                 output_dir=output_dir / EVALUATION_DUMMY_BEST_DIR_NAME,
             )
             replay_buffer.reset()

@@ -6,7 +6,16 @@ from flax import nnx
 
 from ..core.network import ModelConfig
 from ..core.generator import PlayConfig
-from .mnk import StoneColor, Stone, MnkAction, MnkState, MnkGame, MnkConfig, MnkNetwork, evaluate
+from .mnk import (
+    StoneColor,
+    Stone,
+    MnkAction,
+    MnkState,
+    MnkGame,
+    MnkEvaluationConfig,
+    MnkNetwork,
+    evaluate,
+)
 
 
 class TestMnk:
@@ -61,23 +70,17 @@ class TestMnk:
             c_puct=2.0,
             calc_temperature=lambda _: 0.1,  # Lower temperature for stronger play
         )
-        mnk_config = MnkConfig(
-            learning_rate=0.0005,
-            epochs_num=100,
-            batch_size=128,
-            stopping_patience=5,
+        mnk_evaluation_config = MnkEvaluationConfig(
             competitions_num=250,
             competition_margin=0.1,
-            model_config=mnk_model_config,
+            game=mnk_game,
             play_config=play_config,
         )
-        mnk_network = MnkNetwork(m, n, mnk_config)
+        mnk_network = MnkNetwork(m, n)
         candidate_model = nnx.clone(mnk_network.get_best_model())
         result = evaluate(
-            mnk_config.competitions_num,
-            mnk_game,
-            (mnk_network.get_best_model(), mnk_config.model_config),
-            (candidate_model, mnk_config.model_config),
-            mnk_config.play_config,
+            (mnk_network.get_best_model(), mnk_model_config),
+            (candidate_model, mnk_model_config),
+            mnk_evaluation_config,
         )
-        assert abs(result) < mnk_config.competition_margin
+        assert result is None
