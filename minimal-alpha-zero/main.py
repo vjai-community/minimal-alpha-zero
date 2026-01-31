@@ -8,7 +8,7 @@ import time
 from flax import nnx
 
 from alphazero.core.game import ReplayBuffer
-from alphazero.core.network import ModelConfig
+from alphazero.core.model import ModelConfig
 from alphazero.core.generator import PlayConfig, generate_data
 from alphazero.games.mnk import (
     MnkGame,

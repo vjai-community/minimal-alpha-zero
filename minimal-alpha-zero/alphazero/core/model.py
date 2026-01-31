@@ -1,8 +1,7 @@
-import os
 from abc import ABC, abstractmethod
 from typing import Optional
 
-from .game import Action, InputData, Game, ReplayBuffer
+from .game import Action, InputData
 
 
 class ModelConfig:
@@ -44,18 +43,3 @@ class Model(ABC):
         In the paper "Mastering the game of Go without human knowledge", authors use "evaluate",
         but I prefer "predict" to distinguish it from "evaluator", which is used for choosing the best model.
         """
-
-
-class Network(ABC):
-    """ """
-
-    @abstractmethod
-    def train_and_evaluate(self, replay_buffer: ReplayBuffer, game: Game, output_dir: os.PathLike) -> bool:
-        """
-        Train and evaluate models to choose the best for generating new data.
-        Return `True` if the previous best model has been updated with new weights.
-        """
-
-    @abstractmethod
-    def get_best_model(self) -> Model:
-        """ """
