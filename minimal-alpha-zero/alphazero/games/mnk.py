@@ -17,7 +17,7 @@ from jax import Array, nn, numpy as jnp
 from joblib import Parallel, delayed
 
 from ..core.game import Action, InputData, State, Game, ReplayBuffer
-from ..core.network import ModelConfig, Model, Network
+from ..core.model import ModelConfig, Model
 from ..core.generator import PlayConfig, play
 
 
@@ -358,7 +358,7 @@ class MnkEvaluationConfig:
         self.play_config = play_config
 
 
-class MnkNetwork(Network):
+class MnkNetwork:
     """ """
 
     m: int  # Number of columns

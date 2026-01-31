@@ -4,7 +4,7 @@ from typing import Optional
 import pytest
 from flax import nnx
 
-from ..core.network import ModelConfig
+from ..core.model import ModelConfig
 from ..core.generator import PlayConfig
 from .mnk import (
     StoneColor,
