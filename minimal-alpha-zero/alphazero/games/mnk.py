@@ -404,7 +404,7 @@ class MnkNetwork:
             metric_writer.writeheader()
             i = 0
             while True:
-                data_list = [(s.make_input_data(), p, w) for (s, p, w) in replay_buffer.buffer]
+                data_list = [(s.make_input_data(), p, w) for b in replay_buffer.buffer_queue for (s, p, w) in b]
                 metric_record = self._train_one_epoch(candidate_model, optimizer, data_list, training_config.batch_size)
                 # Log the metrics.
                 metric_row = {"epoch": i}

@@ -107,6 +107,7 @@ def main():
         data_output_dir = output_dir / "data"
         os.makedirs(data_output_dir, exist_ok=True)
         j = 0
+        replay_buffer.enqueue_new_buffer()  # Store the data from each iteration in separate buffers
         for data_list in generate_data(
             self_plays_num,
             mnk_game,
@@ -132,7 +133,7 @@ def main():
                         ],
                         [original_data_file, vertical_data_file, horizontal_data_file, central_data_file],
                     ):
-                        replay_buffer.append(data)
+                        replay_buffer.append_to_newest_buffer(data)
                         state, search_probs, reward = data
                         data_file.write(f"{state}\n")
                         data_file.write(f"Search probabilities:\n{format_board(search_probs, m)}\n")
@@ -140,11 +141,10 @@ def main():
                         data_file.write("\n")
                         data_file.flush()
             j += 1
-        logger.info(f"replay_buffer_len={len(replay_buffer.buffer)}")
+        logger.info(f"replay_buffer_len={sum(len(b) for b in replay_buffer.buffer_queue)}")
         is_best_model_updated = mnk_network.train_and_evaluate(
             replay_buffer, mnk_training_config, mnk_evaluation_config, mnk_model_config, output_dir
         )
-        # Clear the replay buffer after updating the best model.
         if is_best_model_updated:
             evaluate(
                 (dummy_model, baseline_model_config),
@@ -152,8 +152,9 @@ def main():
                 mnk_evaluation_config,
                 output_dir=output_dir / EVALUATION_DUMMY_BEST_DIR_NAME,
             )
-            replay_buffer.reset()
             iteration_patience_count = 0
+            # Discard the oldest buffers after updating the best model.
+            replay_buffer.discard_oldest_buffers()
         else:
             iteration_patience_count += 1
         if i >= ITERATIONS_NUM - 1 or iteration_patience_count == ITERATION_STOPPING_PATIENCE:
