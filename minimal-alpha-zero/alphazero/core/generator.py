@@ -97,28 +97,66 @@ class NoiseSession:
         return NoiseSession(key=subkey, dirichlet_alpha=self.dirichlet_alpha, fraction=self.fraction)
 
 
+class GenerationConfig:
+    """ """
+
+    self_plays_num: int
+    game: Game
+    play_config: PlayConfig
+    noise_session: Optional[NoiseSession] = None
+
+    def __init__(
+        self,
+        *,
+        self_plays_num: int,
+        game: Game,
+        play_config: PlayConfig,
+        noise_session: Optional[NoiseSession] = None,
+    ):
+        self.self_plays_num = self_plays_num
+        self.game = game
+        self.play_config = play_config
+        self.noise_session = noise_session
+
+
 def generate_data(
-    self_plays_num: int,
-    game: Game,
     model_spec: tuple[Model, ModelConfig],
-    play_config: PlayConfig,
-    noise_session: Optional[NoiseSession] = None,
+    config: GenerationConfig,
+    partner_model_choices: Optional[list[tuple[Model, ModelConfig, float]]] = None,
+    aggregation_excluded_model_names: Optional[set[str]] = None,
     workers_num: Optional[int] = None,
-) -> Iterable[list[tuple[State, list[float], float]]]:
+) -> Iterable[tuple[list[str], list[tuple[State, list[float], float]]]]:
     """
     Continuously play games over many self-plays to generate data.
     """
 
-    def _self_play(noise_session: Optional[NoiseSession], seed: float) -> list[tuple[State, list[float], float]]:
+    def _self_play(
+        noise_session: Optional[NoiseSession], seed: float
+    ) -> tuple[list[str], list[tuple[State, list[float], float]]]:
         """ """
         random.seed(seed)
-        # Use the same model for both players during self-play.
-        _, moves, reward = play(game, [model_spec], play_config, noise_session=noise_session)
+        model_specs = [model_spec]  # Use the same model for both players by default.
+        if partner_model_choices is not None and len(partner_model_choices) > 0:
+            partner_model_specs = [(m, c) for m, c, _ in partner_model_choices]
+            partner_model_weights = [w for _, _, w in partner_model_choices]
+            # Using not only the current model but also various partner models is not pure "self-play",
+            # but this is necessary to generate more diverse data.
+            partner_model_spec = random.choices(partner_model_specs, weights=partner_model_weights)[0]
+            model, _ = model_spec
+            partner_model, _ = partner_model_spec
+            if model.name != partner_model.name:
+                # NOTE: When playing a game with one player, a single MCTS tree is used for both sides,
+                # but when playing with two or more players, separate trees are used for each player.
+                model_specs = [model_spec, partner_model_spec]
+                random.shuffle(model_specs)
+        _, moves, reward = play(config.game, model_specs, config.play_config, noise_session=noise_session)
         if len(moves) == 0 or reward is None:
             # Just in case.
             return []
         data_list: list[tuple[State, list[float], float]] = []
-        for j, (state, _, search_probs, _) in enumerate(moves):
+        for j, (model_name, state, _, search_probs, _) in enumerate(moves):
+            if aggregation_excluded_model_names is not None and model_name in aggregation_excluded_model_names:
+                continue
             # The sign of reward for each move (positive or negative) alternates based on current player's perspective,
             # since two players take turns: Player A moves first, Player B moves second, then Player A again, and so on.
             # It also depends on which player makes the last move and whether that player wins or loses.
@@ -128,20 +166,21 @@ def generate_data(
             is_current_player_last_mover = (len(moves) - 1 - j) % 2 == 0
             cur_reward = reward * (1 if is_current_player_last_mover else -1)
             data_list.append((state, search_probs, cur_reward))
-        return data_list
+        model_names = [m.name for m, _ in model_specs]
+        return model_names, data_list
 
     # Divide into smaller segments to gradually handle the generated data.
     SEGMENT_SIZE = workers_num or os.cpu_count() or 1
-    self_play_indices = list(range(self_plays_num))
-    for i in range(0, self_plays_num, SEGMENT_SIZE):
+    self_play_indices = list(range(config.self_plays_num))
+    for i in range(0, config.self_plays_num, SEGMENT_SIZE):
         inputs: list[tuple[Optional[NoiseSession], float]] = []
         for _ in self_play_indices[i : i + SEGMENT_SIZE]:
             # Use a different session and random seed for each job.
-            inputs.append((noise_session.split() if noise_session is not None else None, random.random()))
-        aggregated_data_list: list[list[tuple[State, list[float], float]]]
+            inputs.append((config.noise_session.split() if config.noise_session is not None else None, random.random()))
+        aggregated_data_list: list[tuple[list[str], list[tuple[State, list[float], float]]]]
         aggregated_data_list = Parallel(n_jobs=SEGMENT_SIZE)(delayed(_self_play)(*i) for i in inputs)
-        for data_list in aggregated_data_list:
-            yield data_list
+        for model_names, data_list in aggregated_data_list:
+            yield model_names, data_list
 
 
 def play(
@@ -149,7 +188,7 @@ def play(
     model_specs: list[tuple[Model, ModelConfig]],
     config: PlayConfig,
     noise_session: Optional[NoiseSession] = None,
-) -> tuple[State, list[tuple[State, list[float], list[float], float]], float]:
+) -> tuple[State, list[tuple[str, State, list[float], list[float], float]], float]:
     """
     Play a game with multiple players.
     Each player (model) takes turns in order based on its index in the list.
@@ -162,7 +201,7 @@ def play(
     # but since this approach is inefficient, we store the list of existing states in `state_caches` variable for faster checking.
     state_caches: list[dict[State, Node]] = [{} for _ in range(len(model_specs))]
     node = Node(game.begin())
-    moves: list[tuple[State, list[float], list[float], float]] = []
+    moves: list[tuple[str, State, list[float], list[float], float]] = []
     reward = 0.0
     i = 0
     while True:
@@ -203,7 +242,7 @@ def play(
             search_probs = {a: p / scaled_prior_probs_sum for a, p in scaled_prior_probs.items()}
         all_prior_probs = [node.children[a].prior_prob if a in node.children else 0.0 for a in all_actions]
         all_search_probs = [search_probs[a] if a in search_probs else 0.0 for a in all_actions]
-        moves.append((node.state, all_prior_probs, all_search_probs, node.value))
+        moves.append((model.name, node.state, all_prior_probs, all_search_probs, node.value))
         action = random.choices(all_actions, weights=all_search_probs)[0]  # Next action
         # Move to the next model and next node.
         i += 1
