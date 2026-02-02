@@ -18,6 +18,8 @@ from .model import ModelConfig, Model
 
 logger = logging.getLogger(__name__)
 
+PlayRecord = tuple[State, list[tuple[str, State, list[float], list[float], float]], float]
+
 
 class Node:
     """ """
@@ -69,6 +71,31 @@ class PlayConfig:
     ):
         self.c_puct = c_puct
         self.calc_temperature = calc_temperature
+
+
+class EvaluationConfig:
+    """ """
+
+    competitions_num: int
+    competition_margin: float  # Should be positive and less than 1
+    game: Game
+    play_config: PlayConfig
+    log_competition: Optional[Callable[[os.PathLike, Game, PlayRecord], None]]
+
+    def __init__(
+        self,
+        *,
+        competitions_num: int,
+        competition_margin: float,
+        game: Game,
+        play_config: PlayConfig,
+        log_competition: Optional[Callable[[os.PathLike, Game, PlayRecord], None]] = None,
+    ):
+        self.competitions_num = competitions_num
+        self.competition_margin = competition_margin
+        self.game = game
+        self.play_config = play_config
+        self.log_competition = log_competition
 
 
 class NoiseSession:
@@ -149,7 +176,7 @@ def generate_data(
                 # but when playing with two or more players, separate trees are used for each player.
                 model_specs = [model_spec, partner_model_spec]
                 random.shuffle(model_specs)
-        _, moves, reward = play(config.game, model_specs, config.play_config, noise_session=noise_session)
+        _, moves, reward = _play(config.game, model_specs, config.play_config, noise_session=noise_session)
         if len(moves) == 0 or reward is None:
             # Just in case.
             return []
@@ -183,12 +210,79 @@ def generate_data(
             yield model_names, data_list
 
 
-def play(
+def evaluate(
+    model_spec1: tuple[Model, ModelConfig],
+    model_spec2: tuple[Model, ModelConfig],
+    config: EvaluationConfig,
+    output_dir: Optional[os.PathLike] = None,
+    workers_num: Optional[int] = None,
+) -> Optional[bool]:
+    """
+    Return `False` if `model_spec1` is better by the given margin, `True` if `model_spec2` is better by the given margin,
+    and `None` otherwise.
+    """
+    model1, _ = model_spec1
+    model2, _ = model_spec2
+    competitions_num, game, play_config = (config.competitions_num, config.game, config.play_config)
+
+    def _compete_one_game(model_spec1: tuple[Model, ModelConfig], model_spec2: tuple[Model, ModelConfig]) -> PlayRecord:
+        """
+        Have two models play a game and choose the better one based on the reward.
+        Return -1 if `model_spec1` wins, 1 if `model_spec2` wins, `0` for a draw.
+        NOTE: `model_spec1` always moves first.
+        """
+        # Do not add noise during evaluation.
+        last_state, moves, reward = _play(game, [model_spec1, model_spec2], play_config)
+        is_model1_last_mover = len(moves) % 2 == 1
+        if reward == 0.0:
+            return last_state, moves, 0.0
+        result = -1.0 if is_model1_last_mover == (reward > 0) else 1.0
+        return last_state, moves, result
+
+    def _launch_one_competition(competition_index: int, seed: float) -> float:
+        """ """
+        random.seed(seed)
+        is_model1_first_mover = competition_index % 2 == 0
+        last_state: State
+        moves: list[tuple[str, State, list[float], list[float], float]]
+        result: float
+        # Two models take turns having the first move in each competition.
+        if is_model1_first_mover:
+            last_state, moves, cur_result = _compete_one_game(model_spec1, model_spec2)
+            result = cur_result
+        else:
+            last_state, moves, cur_result = _compete_one_game(model_spec2, model_spec1)
+            result = -cur_result
+        # Log the moves.
+        if output_dir is not None and config.log_competition is not None:
+            competition_file_path = output_dir / f"competition-{competition_index:0{len(str(competitions_num))}d}.txt"
+            config.log_competition(competition_file_path, game, (last_state, moves, cur_result))
+        return result
+
+    if output_dir is not None:
+        os.makedirs(output_dir, exist_ok=True)
+    workers_num = workers_num or os.cpu_count() or 1
+    inputs = [(i, random.random()) for i in range(competitions_num)]  # Use a different random seed for each job
+    results: list[float]
+    results = Parallel(n_jobs=workers_num)(delayed(_launch_one_competition)(*i) for i in inputs)
+    result = sum(results) / competitions_num
+    # Log the result.
+    if output_dir is not None:
+        with open(output_dir / "@result.txt", "w") as result_file:
+            result_file.write(f"model1={model1.name}, model2={model2.name}, result={result}\n")
+    logger.info(f"model1={model1.name}, model2={model2.name}, result={result}")
+    if abs(result) >= config.competition_margin:
+        return result > 0
+    else:
+        return None
+
+
+def _play(
     game: Game,
     model_specs: list[tuple[Model, ModelConfig]],
     config: PlayConfig,
     noise_session: Optional[NoiseSession] = None,
-) -> tuple[State, list[tuple[str, State, list[float], list[float], float]], float]:
+) -> PlayRecord:
     """
     Play a game with multiple players.
     Each player (model) takes turns in order based on its index in the list.
