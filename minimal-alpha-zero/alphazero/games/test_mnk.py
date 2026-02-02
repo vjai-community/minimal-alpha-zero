@@ -5,14 +5,13 @@ import pytest
 from flax import nnx
 
 from ..core.model import ModelConfig
-from ..core.generator import PlayConfig
+from ..core.generator import PlayConfig, EvaluationConfig
 from .mnk import (
     StoneColor,
     Stone,
     MnkAction,
     MnkState,
     MnkGame,
-    MnkEvaluationConfig,
     MnkNetwork,
     evaluate,
 )
@@ -66,21 +65,20 @@ class TestMnk:
         m, n, k = 4, 4, 3
         mnk_game = MnkGame(m, n, k)
         mnk_model_config = ModelConfig(mcts_simulations_num=m * n * 5)
-        play_config = PlayConfig(
-            c_puct=2.0,
-            calc_temperature=lambda _: 0.1,  # Lower temperature for stronger play
-        )
-        mnk_evaluation_config = MnkEvaluationConfig(
+        evaluation_config = EvaluationConfig(
             competitions_num=250,
             competition_margin=0.1,
             game=mnk_game,
-            play_config=play_config,
+            play_config=PlayConfig(
+                c_puct=2.0,
+                calc_temperature=lambda _: 0.1,  # Lower temperature for stronger play
+            ),
         )
         mnk_network = MnkNetwork(m, n)
         candidate_model = nnx.clone(mnk_network.get_best_model())
         result = evaluate(
             (mnk_network.get_best_model(), mnk_model_config),
             (candidate_model, mnk_model_config),
-            mnk_evaluation_config,
+            evaluation_config,
         )
         assert result is None

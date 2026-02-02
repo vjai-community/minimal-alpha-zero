@@ -9,16 +9,15 @@ from flax import nnx
 
 from alphazero.core.game import ReplayBuffer
 from alphazero.core.model import ModelConfig
-from alphazero.core.generator import PlayConfig, GenerationConfig, generate_data
+from alphazero.core.generator import PlayConfig, EvaluationConfig, GenerationConfig, evaluate, generate_data
 from alphazero.games.mnk import (
     MnkGame,
     MnkTrainingConfig,
-    MnkEvaluationConfig,
     MnkNetwork,
     DummyModel,
-    evaluate,
     augment_data,
     format_board,
+    log_competition,
     EVALUATION_DUMMY_BEST_DIR_NAME,
 )
 
@@ -65,12 +64,6 @@ def main():
     mnk_game = MnkGame(m, n, k)
     mnk_model_config = ModelConfig(mcts_simulations_num=m * n * 5)  # TODO: Tune this hyperparameter
     baseline_model_config = ModelConfig(mcts_simulations_num=m * n * 5)
-    evaluation_play_config = PlayConfig(
-        c_puct=c_puct,
-        # Keep a high temperature for the first two moves (one move per turn for each player),
-        # then lower the temperature for the rest to achieve stronger play.
-        calc_temperature=lambda i: 1.0 if i <= 1 else 0.1,
-    )
     generation_config = GenerationConfig(
         self_plays_num=250,
         game=mnk_game,
@@ -79,17 +72,23 @@ def main():
             calc_temperature=_calc_temperature,  # TODO: Tune this hyperparameter
         ),
     )
+    evaluation_config = EvaluationConfig(
+        competitions_num=250,
+        competition_margin=0.1,
+        game=mnk_game,
+        play_config=PlayConfig(
+            c_puct=c_puct,
+            # Keep a high temperature for the first two moves (one move per turn for each player),
+            # then lower the temperature for the rest to achieve stronger play.
+            calc_temperature=lambda i: 1.0 if i <= 1 else 0.1,
+        ),
+        log_competition=log_competition,
+    )
     mnk_training_config = MnkTrainingConfig(
         learning_rate=0.0005,
         epochs_num=100,
         batch_size=128,
         stopping_patience=5,
-    )
-    mnk_evaluation_config = MnkEvaluationConfig(
-        competitions_num=250,
-        competition_margin=0.1,
-        game=mnk_game,
-        play_config=evaluation_play_config,
     )
     mnk_network = MnkNetwork(m, n, rngs)
     replay_buffer = ReplayBuffer()
@@ -99,7 +98,7 @@ def main():
     evaluate(
         (dummy_model, baseline_model_config),
         (mnk_network.get_best_model(), mnk_model_config),
-        mnk_evaluation_config,
+        evaluation_config,
         output_dir=run_dir / "initial" / EVALUATION_DUMMY_BEST_DIR_NAME,
     )
     i = 0
@@ -157,13 +156,13 @@ def main():
             j += 1
         logger.info(f"replay_buffer_len={sum(len(b) for b in replay_buffer.buffer_queue)}")
         is_best_model_updated = mnk_network.train_and_evaluate(
-            replay_buffer, mnk_training_config, mnk_evaluation_config, mnk_model_config, output_dir
+            replay_buffer, mnk_training_config, evaluation_config, mnk_model_config, output_dir
         )
         if is_best_model_updated:
             evaluate(
                 (dummy_model, baseline_model_config),
                 (mnk_network.get_best_model(), mnk_model_config),
-                mnk_evaluation_config,
+                evaluation_config,
                 output_dir=output_dir / EVALUATION_DUMMY_BEST_DIR_NAME,
             )
             iteration_patience_count = 0

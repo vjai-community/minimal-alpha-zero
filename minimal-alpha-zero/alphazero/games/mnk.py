@@ -13,11 +13,10 @@ import optax
 from flax import nnx
 from flax.training.early_stopping import EarlyStopping
 from jax import Array, nn, numpy as jnp
-from joblib import Parallel, delayed
 
 from ..core.game import Action, InputData, State, Game, ReplayBuffer
 from ..core.model import ModelConfig, Model
-from ..core.generator import PlayConfig, play
+from ..core.generator import EvaluationConfig, PlayRecord, evaluate
 
 
 EVALUATION_DUMMY_BEST_DIR_NAME = "evaluation-dummy-best"
@@ -337,28 +336,6 @@ class MnkTrainingConfig:
         self.stopping_patience = stopping_patience
 
 
-class MnkEvaluationConfig:
-    """ """
-
-    competitions_num: int
-    competition_margin: float  # Should be positive and less than 1
-    game: MnkGame
-    play_config: PlayConfig
-
-    def __init__(
-        self,
-        *,
-        competitions_num: int,
-        competition_margin: float,
-        game: MnkGame,
-        play_config: PlayConfig,
-    ):
-        self.competitions_num = competitions_num
-        self.competition_margin = competition_margin
-        self.game = game
-        self.play_config = play_config
-
-
 class MnkNetwork:
     """ """
 
@@ -377,7 +354,7 @@ class MnkNetwork:
         self,
         replay_buffer: ReplayBuffer,
         training_config: MnkTrainingConfig,
-        evaluation_config: MnkEvaluationConfig,
+        evaluation_config: EvaluationConfig,
         model_config: ModelConfig,
         output_dir: os.PathLike,
         workers_num: Optional[int] = None,
@@ -483,92 +460,26 @@ class MnkNetwork:
         return metric_record
 
 
-def evaluate(
-    model_spec1: tuple[Model, ModelConfig],
-    model_spec2: tuple[Model, ModelConfig],
-    config: MnkEvaluationConfig,
-    output_dir: Optional[os.PathLike] = None,
-    workers_num: Optional[int] = None,
-) -> Optional[bool]:
-    """
-    Return `False` if `model_spec1` is better by the given margin, `True` if `model_spec2` is better by the given margin,
-    and `None` otherwise.
-    """
-    model1, _ = model_spec1
-    model2, _ = model_spec2
-    competitions_num, game, play_config = (config.competitions_num, config.game, config.play_config)
-
-    def _compete_one_game(
-        model_spec1: tuple[Model, ModelConfig], model_spec2: tuple[Model, ModelConfig]
-    ) -> tuple[State, list[tuple[State, list[float], list[float], float]], float]:
-        """
-        Have two models play a game and choose the better one based on the reward.
-        Return -1 if `model_spec1` wins, 1 if `model_spec2` wins, `0` for a draw.
-        NOTE: `model_spec1` always moves first.
-        """
-        # Do not add noise during evaluation.
-        last_state, moves, reward = play(game, [model_spec1, model_spec2], play_config)
-        is_model1_last_mover = len(moves) % 2 == 1
-        if reward == 0.0:
-            return last_state, moves, 0.0
-        result = -1.0 if is_model1_last_mover == (reward > 0) else 1.0
-        return last_state, moves, result
-
-    def _launch_one_competition(competition_index: int, seed: float) -> float:
-        """ """
-        random.seed(seed)
-        is_model1_first_mover = competition_index % 2 == 0
-        last_state: State
-        moves: list[tuple[State, list[float], list[float], float]]
-        result: float
-        # Two models take turns having the first move in each competition.
-        if is_model1_first_mover:
-            last_state, moves, cur_result = _compete_one_game(model_spec1, model_spec2)
-            result = cur_result
-        else:
-            last_state, moves, cur_result = _compete_one_game(model_spec2, model_spec1)
-            result = -cur_result
-        # Log the moves.
-        if output_dir is not None:
-            competition_file_path = output_dir / f"competition-{competition_index:0{len(str(competitions_num))}d}.txt"
-            with open(competition_file_path, "w") as competition_file:
-                for j, (_, state, prior_probs, search_probs, value) in enumerate(moves):
-                    is_in_red_turn = j % 2 == 0  # Red always moves first. Ref: `MnkGame.simulate` method.
-                    competition_file.write(f"{state}\n")
-                    competition_file.write(
-                        f"Model: {model1.name if is_model1_first_mover == is_in_red_turn else model2.name} "
-                        + f"({(StoneColor.RED if is_in_red_turn else StoneColor.GREEN).get_mark()})\n"
-                    )
-                    competition_file.write(f"Prior probabilities:\n{format_board(prior_probs, game.m)}\n")
-                    competition_file.write(f"Search probabilities:\n{format_board(search_probs, game.m)}\n")
-                    competition_file.write(f"Value: {value:.2f}\n")
-                    competition_file.write("\n")
-                competition_file.write(f"{last_state}\n")
-                competition_file.write("\n")
-                competition_file.write(
-                    "Draw"
-                    if cur_result == 0.0
-                    else f"Winner: {model1.name if is_model1_first_mover == (cur_result < 0) else model2.name}"
-                )
-                competition_file.write("\n")
-        return result
-
-    if output_dir is not None:
-        os.makedirs(output_dir, exist_ok=True)
-    workers_num = workers_num or os.cpu_count() or 1
-    inputs = [(i, random.random()) for i in range(competitions_num)]  # Use a different random seed for each job
-    results: list[float]
-    results = Parallel(n_jobs=workers_num)(delayed(_launch_one_competition)(*i) for i in inputs)
-    result = sum(results) / competitions_num
-    # Log the result.
-    if output_dir is not None:
-        with open(output_dir / "@result.txt", "w") as result_file:
-            result_file.write(f"model1={model1.name}, model2={model2.name}, result={result}\n")
-    logger.info(f"model1={model1.name}, model2={model2.name}, result={result}")
-    if abs(result) >= config.competition_margin:
-        return result > 0
-    else:
-        return None
+def log_competition(competition_file_path: os.PathLike, game: MnkGame, play_record: PlayRecord):
+    """ """
+    last_state, moves, result = play_record
+    model1_name, *_ = moves[0]
+    model2_name, *_ = moves[1]
+    with open(competition_file_path, "w") as competition_file:
+        for j, (model_name, state, prior_probs, search_probs, value) in enumerate(moves):
+            is_in_red_turn = j % 2 == 0  # Red always moves first. Ref: `MnkGame.simulate` method.
+            competition_file.write(f"{state}\n")
+            competition_file.write(
+                f"Model: {model_name} " + f"({(StoneColor.RED if is_in_red_turn else StoneColor.GREEN).get_mark()})\n"
+            )
+            competition_file.write(f"Prior probabilities:\n{format_board(prior_probs, game.m)}\n")
+            competition_file.write(f"Search probabilities:\n{format_board(search_probs, game.m)}\n")
+            competition_file.write(f"Value: {value:.2f}\n")
+            competition_file.write("\n")
+        competition_file.write(f"{last_state}\n")
+        competition_file.write("\n")
+        competition_file.write("Draw" if result == 0.0 else f"Winner: {model1_name if result < 0 else model2_name}")
+        competition_file.write("\n")
 
 
 def format_board(flattened_board: list[float], m: int) -> str:
