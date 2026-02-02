@@ -9,7 +9,7 @@ from flax import nnx
 
 from alphazero.core.game import ReplayBuffer
 from alphazero.core.model import ModelConfig
-from alphazero.core.generator import PlayConfig, generate_data
+from alphazero.core.generator import PlayConfig, GenerationConfig, generate_data
 from alphazero.games.mnk import (
     MnkGame,
     MnkTrainingConfig,
@@ -49,7 +49,6 @@ def main():
 
     # Initialize the game.
     c_puct = 2.0  # TODO: Tune this hyperparameter
-    self_plays_num = 250
 
     def _calc_temperature(move_index: int) -> float:
         """ """
@@ -66,15 +65,19 @@ def main():
     mnk_game = MnkGame(m, n, k)
     mnk_model_config = ModelConfig(mcts_simulations_num=m * n * 5)  # TODO: Tune this hyperparameter
     baseline_model_config = ModelConfig(mcts_simulations_num=m * n * 5)
-    training_play_config = PlayConfig(
-        c_puct=c_puct,
-        calc_temperature=_calc_temperature,  # TODO: Tune this hyperparameter
-    )
     evaluation_play_config = PlayConfig(
         c_puct=c_puct,
         # Keep a high temperature for the first two moves (one move per turn for each player),
         # then lower the temperature for the rest to achieve stronger play.
         calc_temperature=lambda i: 1.0 if i <= 1 else 0.1,
+    )
+    generation_config = GenerationConfig(
+        self_plays_num=250,
+        game=mnk_game,
+        play_config=PlayConfig(
+            c_puct=c_puct,
+            calc_temperature=_calc_temperature,  # TODO: Tune this hyperparameter
+        ),
     )
     mnk_training_config = MnkTrainingConfig(
         learning_rate=0.0005,
@@ -101,6 +104,7 @@ def main():
     )
     i = 0
     iteration_patience_count = 0
+    aggregation_excluded_model_names = set([dummy_model.name])
     while True:
         logger.info(f"iteration_index={i:0{len(str(ITERATIONS_NUM))}d}")
         output_dir = run_dir / f"iteration_{i:0{len(str(ITERATIONS_NUM))}d}"
@@ -108,13 +112,18 @@ def main():
         os.makedirs(data_output_dir, exist_ok=True)
         j = 0
         replay_buffer.enqueue_new_buffer()  # Store the data from each iteration in separate buffers
-        for data_list in generate_data(
-            self_plays_num,
-            mnk_game,
+        partner_model_choices = [
+            # TODO: Tune the weights.
+            (mnk_network.get_best_model(), mnk_model_config, 0.8),
+            (dummy_model, baseline_model_config, 0.2),
+        ]
+        for model_names, data_list in generate_data(
             (mnk_network.get_best_model(), mnk_model_config),
-            training_play_config,
+            generation_config,
+            partner_model_choices=partner_model_choices,
+            aggregation_excluded_model_names=aggregation_excluded_model_names,
         ):
-            data_file_name = f"self_play-{j:0{len(str(self_plays_num))}d}"
+            data_file_name = f"self_play-{j:0{len(str(generation_config.self_plays_num))}d}"
             # Store and log the training data.
             with (
                 open(data_output_dir / f"{data_file_name}-00_original.txt", "w") as original_data_file,
@@ -122,6 +131,11 @@ def main():
                 open(data_output_dir / f"{data_file_name}-02_horizontal.txt", "w") as horizontal_data_file,
                 open(data_output_dir / f"{data_file_name}-03_central.txt", "w") as central_data_file,
             ):
+                for data_file in [original_data_file, vertical_data_file, horizontal_data_file, central_data_file]:
+                    detailed_model_names = [
+                        f"{n} (excluded)" if n in aggregation_excluded_model_names else n for n in model_names
+                    ]
+                    data_file.write(f"Models: {', '.join(detailed_model_names)}\n\n")
                 for original_data in data_list:
                     augmented_data_list = augment_data(original_data)
                     for data, data_file in zip(

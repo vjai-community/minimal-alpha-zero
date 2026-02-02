@@ -6,7 +6,6 @@ import csv
 import logging
 import os
 import random
-from abc import ABC
 from enum import Enum
 from typing import Optional
 
@@ -254,16 +253,7 @@ class MnkGame(Game):
         return False
 
 
-class NamedModel(Model, ABC):
-    """ """
-
-    name: str  # Mainly used for debugging
-
-    def set_name(self, name: str):
-        self.name = name
-
-
-class MnkModel(nnx.Module, NamedModel):
+class MnkModel(nnx.Module, Model):
     """ """
 
     INPUT_CHANNEL = 1
@@ -306,7 +296,7 @@ class MnkModel(nnx.Module, NamedModel):
         return prior_probs, value
 
 
-class DummyModel(NamedModel):
+class DummyModel(Model):
     """ """
 
     m: int  # Number of columns
@@ -494,8 +484,8 @@ class MnkNetwork:
 
 
 def evaluate(
-    model_spec1: tuple[NamedModel, ModelConfig],
-    model_spec2: tuple[NamedModel, ModelConfig],
+    model_spec1: tuple[Model, ModelConfig],
+    model_spec2: tuple[Model, ModelConfig],
     config: MnkEvaluationConfig,
     output_dir: Optional[os.PathLike] = None,
     workers_num: Optional[int] = None,
@@ -542,7 +532,7 @@ def evaluate(
         if output_dir is not None:
             competition_file_path = output_dir / f"competition-{competition_index:0{len(str(competitions_num))}d}.txt"
             with open(competition_file_path, "w") as competition_file:
-                for j, (state, prior_probs, search_probs, value) in enumerate(moves):
+                for j, (_, state, prior_probs, search_probs, value) in enumerate(moves):
                     is_in_red_turn = j % 2 == 0  # Red always moves first. Ref: `MnkGame.simulate` method.
                     competition_file.write(f"{state}\n")
                     competition_file.write(

@@ -33,6 +33,11 @@ class Model(ABC):
     Ref: `.game.ReplayBuffer` class.
     """
 
+    name: str
+
+    def set_name(self, name: str):
+        self.name = name
+
     @abstractmethod
     def predict_single(self, input_data: InputData) -> tuple[dict[Action, float], float]:
         """
