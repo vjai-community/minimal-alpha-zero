@@ -133,30 +133,38 @@ class MnkGame(Game):
     m: int  # Number of columns
     n: int  # Number of rows
     k: int  # Number of stones to connect
-    initial_stones_num: int
+    initial_stones_nums: Optional[list[int]]
 
     # With some choices of m, n, k, it is probably too easy for the first player to win.
     # Hence, we give the winner a larger reward if the game ends quickly and a smaller reward if it lasts longer,
     # hopefully encouraging the second player to prolong the game as much as possible to reduce the reward their opponent receives.
     should_prefer_fast_win: bool
 
-    def __init__(self, m: int, n: int, k: int, initial_stones_num: int = 0, should_prefer_fast_win: bool = False):
+    def __init__(
+        self,
+        m: int,
+        n: int,
+        k: int,
+        initial_stones_nums: Optional[list[int]] = None,
+        should_prefer_fast_win: bool = False,
+    ):
         self.m = m
         self.n = n
         self.k = k
-        self.initial_stones_num = initial_stones_num
+        self.initial_stones_nums = (
+            [n for n in initial_stones_nums if n >= 0 and n < self.m * self.n and n % 2 == 0]  # Keep only even numbers
+            if initial_stones_nums is not None
+            else None
+        )
         self.should_prefer_fast_win = should_prefer_fast_win
 
     def begin(self) -> MnkState:
         """ """
         state = MnkState([[None for _ in range(self.m)] for _ in range(self.n)], 0, None)
-        if self.initial_stones_num == 0:
+        if self.initial_stones_nums is None or len(self.initial_stones_nums) == 0:
             return state
         positions = [(x, y) for y in range(self.n) for x in range(self.m)]
-        initial_stones_num = self.initial_stones_num
-        if initial_stones_num % 2 != 0:
-            initial_stones_num += 1  # Should be an even number
-        initial_stones_num = min(self.m * self.n, initial_stones_num)
+        initial_stones_num = random.choice(self.initial_stones_nums)
         for x, y in random.sample(positions, initial_stones_num):
             state = self.simulate(state, MnkAction(x, y))
         return state
