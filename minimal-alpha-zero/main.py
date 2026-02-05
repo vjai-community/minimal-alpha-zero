@@ -3,6 +3,7 @@ import logging
 import os
 import pathlib
 import random
+import re
 import time
 
 from flax import nnx
@@ -23,7 +24,14 @@ from alphazero.games.mnk import (
 
 
 STORAGE_DIR = pathlib.Path(__file__).parent.parent / "storage"
-logging.basicConfig(level=logging.INFO, format="[%(levelname)s] (%(asctime)s) %(name)s: %(message)s")
+run_time = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+run_dir = STORAGE_DIR / run_time
+os.makedirs(run_dir, exist_ok=True)
+logging.basicConfig(
+    filename=run_dir / "run.log",
+    level=logging.INFO,
+    format="[%(levelname)s] (%(asctime)s) %(name)s: %(message)s",
+)
 logger = logging.getLogger(__name__)
 
 
@@ -37,14 +45,9 @@ def main():
     # If we want the first player to be unable to always force a win, but still have a reasonable chance of winning,
     # consider choosing: m, n, k = (5, 5, 4)
     seed = int(time.time() * 1000)
-    run_time = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     logger.info(f"seed={seed}, run_time={run_time}")
     random.seed(seed)
     rngs = nnx.Rngs(seed)
-    run_dir = STORAGE_DIR / run_time
-    os.makedirs(run_dir, exist_ok=True)
-    with open(run_dir / "config.log", "w") as config_file:
-        config_file.write(f"seed={seed}\n")
 
     # Initialize the game.
     c_puct = 2.0  # TODO: Tune this hyperparameter
@@ -93,6 +96,12 @@ def main():
     mnk_network = MnkNetwork(m, n, rngs)
     replay_buffer = ReplayBuffer()
     dummy_model = DummyModel(m, n)
+    with open(run_dir / "config.log", "w") as config_file:
+        config_file.write(f"seed={seed}\n")
+        config_file.write(
+            # Remove ANSI color codes.
+            "model=" + re.sub(r"\x1b\[[0-9;]*m", "", str(mnk_network.get_best_model())) + "\n"
+        )
 
     # Training and evaluating.
     evaluate(
