@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import Optional
+from typing import Callable, Optional
 
 from .game import Action, InputData
 
@@ -7,14 +7,14 @@ from .game import Action, InputData
 class ModelConfig:
     """ """
 
-    mcts_simulations_num: Optional[int]
+    calc_mcts_simulations_num: Optional[Callable[[], int]]
 
     def __init__(
         self,
         *,
-        mcts_simulations_num: Optional[int] = 1,
+        calc_mcts_simulations_num: Optional[Callable[[], int]] = lambda: 1,
     ):
-        self.mcts_simulations_num = mcts_simulations_num
+        self.calc_mcts_simulations_num = calc_mcts_simulations_num
 
 
 class Model(ABC):
