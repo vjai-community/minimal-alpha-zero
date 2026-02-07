@@ -1,3 +1,4 @@
+import copy
 import datetime
 import logging
 import os
@@ -65,8 +66,9 @@ def main():
         return max(temperature, MIN_TEMPERATURE)
 
     mnk_game = MnkGame(m, n, k)
-    mnk_model_config = ModelConfig(mcts_simulations_num=m * n * 5)  # TODO: Tune this hyperparameter
-    baseline_model_config = ModelConfig(mcts_simulations_num=m * n * 5)
+    mnk_model_config = ModelConfig(calc_mcts_simulations_num=lambda: m * n * 5)  # TODO: Tune this hyperparameter
+    baseline_model_config = ModelConfig(calc_mcts_simulations_num=lambda: m * n * 5)
+    dummy_model_config = ModelConfig(calc_mcts_simulations_num=lambda: random.randint(m * n * 5, m * n * 20))
     generation_config = GenerationConfig(
         self_plays_num=250,
         game=mnk_game,
@@ -75,6 +77,8 @@ def main():
             calc_temperature=_calc_temperature,  # TODO: Tune this hyperparameter
         ),
     )
+    dummy_generation_config = copy.deepcopy(generation_config)
+    dummy_generation_config.self_plays_num = 50
     evaluation_config = EvaluationConfig(
         competitions_num=250,
         competition_margin=0.1,
@@ -125,6 +129,38 @@ def main():
             (mnk_network.get_best_model(), mnk_model_config, 0.8),
             (dummy_model, baseline_model_config, 0.2),
         ]
+
+        # Generate only last moves from a dummy player.
+        with (
+            open(data_output_dir / "dummy_last_moves-00_original.txt", "w") as original_data_file,
+            open(data_output_dir / "dummy_last_moves-01_vertical.txt", "w") as vertical_data_file,
+            open(data_output_dir / "dummy_last_moves-02_horizontal.txt", "w") as horizontal_data_file,
+            open(data_output_dir / "dummy_last_moves-03_central.txt", "w") as central_data_file,
+        ):
+            for _, data_list in generate_data((dummy_model, dummy_model_config), dummy_generation_config):
+                original_data = data_list[-1]  # Last move
+                augmented_data_list = augment_data(original_data)
+                for data, data_file in zip(
+                    [
+                        original_data,
+                        augmented_data_list["vertical"],
+                        augmented_data_list["horizontal"],
+                        augmented_data_list["central"],
+                    ],
+                    [original_data_file, vertical_data_file, horizontal_data_file, central_data_file],
+                ):
+                    replay_buffer.append_to_newest_buffer(data)
+                    state, probs, reward = data
+                    # Prioritize the last action to have the highest probability.
+                    highest_prob = max(probs)
+                    highest_prob_count = probs.count(highest_prob)
+                    probs = [1.0 / highest_prob_count if p == highest_prob else 0.0 for p in probs]
+                    data_file.write(f"{state}\n")
+                    data_file.write(f"Probabilities:\n{format_board(probs, m)}\n")
+                    data_file.write(f"Reward: {reward:.2f}\n")
+                    data_file.write("\n")
+                    data_file.flush()
+        # Generate data from self-play.
         for model_names, data_list in generate_data(
             (mnk_network.get_best_model(), mnk_model_config),
             generation_config,
@@ -164,6 +200,7 @@ def main():
                         data_file.flush()
             j += 1
         logger.info(f"replay_buffer_len={sum(len(b) for b in replay_buffer.buffer_queue)}")
+
         is_best_model_updated = mnk_network.train_and_evaluate(
             replay_buffer, mnk_training_config, evaluation_config, mnk_model_config, output_dir
         )

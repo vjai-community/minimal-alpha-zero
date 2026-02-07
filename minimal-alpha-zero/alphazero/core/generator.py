@@ -294,6 +294,9 @@ def _play(
     # Theoretically, we could do this by storing only a root node for each model and performing a recursive search,
     # but since this approach is inefficient, we store the list of existing states in `state_caches` variable for faster checking.
     state_caches: list[dict[State, Node]] = [{} for _ in range(len(model_specs))]
+    mcts_simulations_nums: list[Optional[int]] = [
+        c.calc_mcts_simulations_num() if c.calc_mcts_simulations_num is not None else None for _, c in model_specs
+    ]
     node = Node(game.begin())
     moves: list[tuple[str, State, list[float], list[float], float]] = []
     reward = 0.0
@@ -306,17 +309,11 @@ def _play(
             break
         # Search for the probabilities of legal actions for the next move.
         search_probs: dict[Action, float]
-        model, model_config = model_specs[i % len(model_specs)]
-        if model_config.mcts_simulations_num is not None:
-            _execute_mcts(
-                state_caches[i % len(model_specs)],
-                node,
-                game,
-                model,
-                model_config.mcts_simulations_num,
-                config.c_puct,
-                noise_session,
-            )
+        model, _ = model_specs[i % len(model_specs)]
+        mcts_simulations_num = mcts_simulations_nums[i % len(model_specs)]
+        if mcts_simulations_num is not None:
+            state_cache = state_caches[i % len(model_specs)]
+            _execute_mcts(state_cache, node, game, model, mcts_simulations_num, config.c_puct, noise_session)
             # Select a move according to the search probabilities π computed by MCTS.
             # π(a|s) = N(s,a)^(1/τ) / (∑b N(s,b)^(1/τ))
             scaled_visit_counts = {

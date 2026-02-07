@@ -13,6 +13,7 @@ import optax
 from flax import nnx
 from flax.training.early_stopping import EarlyStopping
 from jax import Array, nn, numpy as jnp
+from joblib import Parallel, delayed
 
 from ..core.game import Action, InputData, State, Game, ReplayBuffer
 from ..core.model import ModelConfig, Model
@@ -600,3 +601,34 @@ def augment_data(data: tuple[MnkState, list[float], float]) -> dict[str, tuple[M
         # TODO: Add rotations.
     }
     return augmented_data_list
+
+
+def generate_last_moves(
+    game: MnkGame, games_num: int, workers_num: Optional[int] = None
+) -> list[tuple[MnkState, list[float], float]]:
+    """ """
+
+    def _generate(seed: float) -> tuple[MnkState, list[float], float]:
+        random.seed(seed)
+        state = game.begin()
+        last_move: tuple[MnkState, MnkAction]
+        reward: float
+        while True:
+            reward = game.receive_reward_if_terminal(state)
+            if reward is not None:
+                break
+            action = random.choice(game.list_legal_actions(state))
+            last_move = state, action
+            state = game.simulate(state, action)
+        # Use the same layout as `MnkGame.list_all_actions` method to ensure the same action order.
+        # Please refer to `Model` class for details.
+        state, action = last_move
+        # Prioritize the last action to have the highest probability.
+        probs = [1.0 if x == action.x and y == action.y else 0.0 for y in range(game.n) for x in range(game.m)]
+        return state, probs, reward
+
+    workers_num = workers_num or os.cpu_count() or 1
+    inputs = [(random.random(),) for _ in range(games_num)]  # Use a different random seed for each job
+    last_moves: list[tuple[MnkState, list[float], float]]
+    last_moves = Parallel(n_jobs=workers_num)(delayed(_generate)(*i) for i in inputs)
+    return last_moves

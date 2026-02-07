@@ -63,7 +63,7 @@ class TestMnk:
         """ """
         m, n, k = 4, 4, 3
         mnk_game = MnkGame(m, n, k)
-        mnk_model_config = ModelConfig(mcts_simulations_num=m * n * 5)
+        mnk_model_config = ModelConfig(calc_mcts_simulations_num=lambda: m * n * 5)
         evaluation_config = EvaluationConfig(
             competitions_num=250,
             competition_margin=0.1,
