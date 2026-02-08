@@ -30,7 +30,14 @@ class State(ABC):
 
     @abstractmethod
     def make_input_data(self) -> InputData:
-        """ """
+        """
+        NOTE:
+        It is recommended to represent input data from the perspective of the current player (i.e., who will make the next move).
+        For example, all pieces belonging to the current player should be represented as `1`,
+        while pieces belonging to the opponent should be represented as `-1` and empty positions should be represented as `0`.
+        Doing this makes training more generic, more data-efficient, and faster to converge
+        because the model can reuse symmetric perspectives instead of learning separate representations for each side.
+        """
 
 
 class Game(ABC):

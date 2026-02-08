@@ -27,19 +27,18 @@ logger = logging.getLogger(__name__)
 class StoneColor(Enum):
     """ """
 
-    RED = (-1, "x")
-    GREEN = (1, "o")
+    RED = ("x", "X")
+    GREEN = ("o", "O")
 
     _mark: str
+    _big_mark: str
 
-    def __new__(cls, value: int, mark: str):
-        obj = object.__new__(cls)
-        obj._value_ = value
-        obj._mark = mark
-        return obj
+    def __init__(self, mark: str, big_mark: str):
+        self._mark = mark
+        self._big_mark = big_mark
 
     def get_mark(self, is_last_stone: bool = False) -> str:
-        return self._mark if not is_last_stone else self._mark.upper()
+        return self._mark if not is_last_stone else self._big_mark
 
 
 class Stone:
@@ -84,6 +83,8 @@ class MnkInputData(InputData):
 class MnkState(State):
     """ """
 
+    SHOULD_USE_FIXED_COLOR_REPRESENTATION = True
+
     board: list[list[Optional[Stone]]]
 
     # Used to simplify checking whether the state is terminal.
@@ -96,14 +97,45 @@ class MnkState(State):
         stone_count: int,
         last_action: Optional[MnkAction],
     ):
+        if last_action is not None and board[last_action.y][last_action.x] is None:
+            raise ValueError("Invalid last action: its position on the board is empty.")
         self.board = board
         self.stone_count = stone_count
         self.last_action = last_action
 
     def make_input_data(self) -> MnkInputData:
         """ """
-        board_data = [[float(s.color.value) if s is not None else 0.0 for s in r] for r in self.board]
+        board_data: list[list[float]]
+        if self.SHOULD_USE_FIXED_COLOR_REPRESENTATION:
+            # Representing input data from the current player's perspective has some benefits,
+            # but in our case we can simply use a fixed value for each color.
+            # The reason is that Red always moves first, which means the current player's color for a given state is fixed,
+            # therefore, we will theoretically never encounter the opposite perspective (although I might be wrong).
+            board_data = [
+                [(-1.0 if s.color == StoneColor.RED else 1.0) if s is not None else 0.0 for s in r]  # Fixed stone color
+                for r in self.board
+            ]
+        else:
+            # Represent input data from the current player's perspective.
+            # TODO:
+            # This approach appears to converge too quickly and performs worse on simple games with short training times.
+            # We need to identify the cause.
+            color = self.get_current_player_color()
+            board_data = [
+                # The current player's stones are represented as `1`, and the opponent's as `-1`.
+                [(1.0 if s.color == color else -1.0) if s is not None else 0.0 for s in r]
+                for r in self.board
+            ]
         return MnkInputData(board_data)
+
+    def get_current_player_color(self) -> StoneColor:
+        """ """
+        # Determine whether it is Red's turn.
+        is_in_red_turn = (
+            self.last_action is None  # Red always moves first
+            or self.board[self.last_action.y][self.last_action.x].color == StoneColor.GREEN
+        )
+        return StoneColor.RED if is_in_red_turn else StoneColor.GREEN
 
     def __str__(self):
         board_str = ""
@@ -182,27 +214,15 @@ class MnkGame(Game):
         Only return a new state without storing it in history.
         """
         new_board: list[list[Optional[Stone]]] = []
-        red_count = 0
-        green_count = 0
         for cur_row in state.board:
             new_row: list[Optional[Stone]] = []
             for stone in cur_row:
-                if stone is not None:
-                    # Count the number of stones for each color.
-                    if stone.color == StoneColor.RED:
-                        red_count += 1
-                    else:
-                        green_count += 1
-                    new_row.append(Stone(stone.color))
-                else:
-                    new_row.append(None)
+                new_row.append(Stone(stone.color) if stone is not None else None)
             new_board.append(new_row)
-        # Determine whether it is Red's turn.
-        is_in_red_turn = red_count <= green_count
-        color = Stone(StoneColor.RED if is_in_red_turn else StoneColor.GREEN)
+        stone = Stone(state.get_current_player_color())  # Next stone
         stone_count = state.stone_count
         if new_board[action.y][action.x] is None:
-            new_board[action.y][action.x] = color
+            new_board[action.y][action.x] = stone
             stone_count += 1
         else:
             # An illegal action. This should never happen.
@@ -475,7 +495,7 @@ def log_competition(competition_file_path: os.PathLike, game: MnkGame, play_reco
     model2_name, *_ = moves[1]
     with open(competition_file_path, "w") as competition_file:
         for j, (model_name, state, prior_probs, search_probs, value) in enumerate(moves):
-            is_in_red_turn = j % 2 == 0  # Red always moves first. Ref: `MnkGame.simulate` method.
+            is_in_red_turn = j % 2 == 0  # Red always moves first. Ref: `MnkState.get_current_player_color` method.
             competition_file.write(f"{state}\n")
             competition_file.write(
                 f"Model: {model_name} " + f"({(StoneColor.RED if is_in_red_turn else StoneColor.GREEN).get_mark()})\n"

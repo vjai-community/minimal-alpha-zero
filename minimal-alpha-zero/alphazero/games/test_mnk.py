@@ -57,8 +57,7 @@ class TestMnk:
                         or new_state.board[y][x].color == state.board[y][x].color
                     )
                 else:
-                    is_in_red_turn = red_count <= green_count
-                    assert new_state.board[y][x].color == StoneColor.RED if is_in_red_turn else StoneColor.GREEN
+                    assert new_state.board[y][x].color == state.get_current_player_color()
 
     def test_network_evaluate(self):
         """ """
