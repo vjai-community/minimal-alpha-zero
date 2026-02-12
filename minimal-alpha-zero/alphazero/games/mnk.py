@@ -13,6 +13,7 @@ import optax
 from flax import nnx
 from flax.training.early_stopping import EarlyStopping
 from jax import Array, nn, numpy as jnp
+from jax.scipy.special import entr
 from joblib import Parallel, delayed
 
 from ..core.game import Action, InputData, State, Game, ReplayBuffer
@@ -346,6 +347,7 @@ class DummyModel(Model):
 class MnkTrainingConfig:
     """ """
 
+    data_split_ratio: float
     learning_rate: float
     epochs_num: int
     batch_size: int
@@ -354,11 +356,13 @@ class MnkTrainingConfig:
     def __init__(
         self,
         *,
+        data_split_ratio: float,
         learning_rate: float,
         epochs_num: int,
         batch_size: int,
         stopping_patience: int,
     ):
+        self.data_split_ratio = data_split_ratio
         self.learning_rate = learning_rate
         self.epochs_num = epochs_num
         self.batch_size = batch_size
@@ -389,6 +393,12 @@ class MnkNetwork:
         workers_num: Optional[int] = None,
     ) -> bool:
         """ """
+        # Prepare the data.
+        data_list = [(s.make_input_data(), p, w) for b in replay_buffer.buffer_queue for (s, p, w) in b]
+        data_list = random.sample(data_list, len(data_list))
+        train_len = int(len(data_list) * training_config.data_split_ratio)
+        train_data_list = data_list[:train_len]
+        val_data_list = data_list[train_len:]
         # Train a new candidate model.
         candidate_model = nnx.clone(self.best_model)
         candidate_model.set_name("candidate")
@@ -396,12 +406,17 @@ class MnkNetwork:
         optimizer = nnx.Optimizer(candidate_model, optax.adamw(training_config.learning_rate), wrt=nnx.Param)
         early_stopping = EarlyStopping(patience=training_config.stopping_patience)
         with open(output_dir / "metric.csv", "a") as metric_file:
-            metric_writer = csv.DictWriter(metric_file, ["epoch", "train_loss", "val_loss"])
+            metric_writer = csv.DictWriter(
+                metric_file,
+                # Ref: `self._train_one_epoch` method.
+                ["epoch", "train_loss", "train_truth_loss", "val_loss", "val_truth_loss"],
+            )
             metric_writer.writeheader()
             i = 0
             while True:
-                data_list = [(s.make_input_data(), p, w) for b in replay_buffer.buffer_queue for (s, p, w) in b]
-                metric_record = self._train_one_epoch(candidate_model, optimizer, data_list, training_config.batch_size)
+                metric_record = self._train_one_epoch(
+                    candidate_model, optimizer, train_data_list, val_data_list, training_config.batch_size
+                )
                 # Log the metrics.
                 metric_row = {"epoch": i}
                 for name, value in metric_record.items():
@@ -439,38 +454,43 @@ class MnkNetwork:
     def _train_one_epoch(
         model: MnkModel,
         optimizer: nnx.Optimizer,
-        data_list: list[tuple[MnkInputData, list[float], float]],
+        train_data_list: list[tuple[MnkInputData, list[float], float]],
+        val_data_list: list[tuple[MnkInputData, list[float], float]],
         batch_size: int,
-        split_ratio: float = 0.9,
     ) -> dict[str, float]:
         """
         Train for one epoch.
         """
 
-        def _loss_fn(model: MnkModel, data_batch: tuple[Array, Array, Array]) -> tuple[float, tuple[Array, Array]]:
+        def _loss_fn(
+            model: MnkModel, data_batch: tuple[Array, Array, Array]
+        ) -> tuple[float, tuple[float, Array, Array]]:
             # l = (z-v)^2 - π*log(p)
             boards, improved_probs, winners = data_batch
             prior_prob_logits, values = model(boards)
             value_loss = optax.l2_loss(values, winners).mean()  # MSE
             probs_loss = optax.softmax_cross_entropy(prior_prob_logits, improved_probs).mean()
             loss = value_loss + probs_loss
-            return loss, (prior_prob_logits, winners)
+            # The ideal "ground truth" loss is the sum of the "floor" (minimum possible) MSE loss, which is zero,
+            # and the "floor" cross-entropy loss, which is equal to the entropy of the target distribution itself.
+            # NOTE:
+            # In practice, this "ground truth" loss is rarely reachable because identical states
+            # often have different prior probabilities and values due to noise and varying final results.
+            truth_loss = jnp.sum(entr(improved_probs), axis=-1).mean()
+            return loss, (truth_loss, prior_prob_logits, winners)
 
-        metric = nnx.MultiMetric(loss=nnx.metrics.Average("loss"))
+        metric = nnx.MultiMetric(loss=nnx.metrics.Average("loss"), truth_loss=nnx.metrics.Average("truth_loss"))
         metric_record: dict[str, float] = {}
-        data_list = random.sample(data_list, len(data_list))  # TODO: Choose a deterministic approach
-        train_len = int(len(data_list) * split_ratio)
-        train_data_list = data_list[:train_len]
-        val_data_list = data_list[train_len:]
         grad_fn = nnx.value_and_grad(_loss_fn, has_aux=True)
         # Training
+        train_data_list = random.sample(train_data_list, len(train_data_list))
         for data_batch in [train_data_list[i : i + batch_size] for i in range(0, len(train_data_list), batch_size)]:
             boards = jnp.array([i.board_data for (i, _, _) in data_batch])
             boards = boards.reshape((*boards.shape, MnkModel.INPUT_CHANNEL))
             improved_probs = jnp.array([p for (_, p, _) in data_batch])
             winners = jnp.array([w for (_, _, w) in data_batch])
-            (loss, _), grads = grad_fn(model, (boards, improved_probs, winners))
-            metric.update(loss=loss)
+            (loss, (truth_loss, *_)), grads = grad_fn(model, (boards, improved_probs, winners))
+            metric.update(loss=loss, truth_loss=truth_loss)
             optimizer.update(model, grads)
         for name, value in metric.compute().items():
             metric_record[f"train_{name}"] = value
@@ -481,15 +501,15 @@ class MnkNetwork:
             boards = boards.reshape((*boards.shape, MnkModel.INPUT_CHANNEL))
             improved_probs = jnp.array([p for (_, p, _) in data_batch])
             winners = jnp.array([w for (_, _, w) in data_batch])
-            loss, _ = _loss_fn(model, (boards, improved_probs, winners))
-            metric.update(loss=loss)
+            loss, (truth_loss, *_) = _loss_fn(model, (boards, improved_probs, winners))
+            metric.update(loss=loss, truth_loss=truth_loss)
         for name, value in metric.compute().items():
             metric_record[f"val_{name}"] = value
         metric.reset()
         return metric_record
 
 
-def log_competition(competition_file_path: os.PathLike, game: MnkGame, play_record: PlayRecord):
+def log_competition(competition_file_path: os.PathLike, play_record: PlayRecord):
     """ """
     last_state, moves, result = play_record
     model1_name, *_ = moves[0]
@@ -501,8 +521,8 @@ def log_competition(competition_file_path: os.PathLike, game: MnkGame, play_reco
             competition_file.write(
                 f"Model: {model_name} " + f"({(StoneColor.RED if is_in_red_turn else StoneColor.GREEN).get_mark()})\n"
             )
-            competition_file.write(f"Prior probabilities:\n{format_board(prior_probs, game.m)}\n")
-            competition_file.write(f"Search probabilities:\n{format_board(search_probs, game.m)}\n")
+            competition_file.write(f"Prior probabilities (%):\n{format_board(state, prior_probs)}\n")
+            competition_file.write(f"Search probabilities (%):\n{format_board(state, search_probs)}\n")
             competition_file.write(f"Value: {value:.2f}\n")
             competition_file.write("\n")
         competition_file.write(f"{last_state}\n")
@@ -511,14 +531,27 @@ def log_competition(competition_file_path: os.PathLike, game: MnkGame, play_reco
         competition_file.write("\n")
 
 
-def format_board(flattened_board: list[float], m: int) -> str:
+def format_board(state: MnkState, flattened_probs: list[float]) -> str:
     """ """
+    n = len(state.board)
+    m = len(state.board[0])
     board_str = ""
-    board = [flattened_board[i : i + m] for i in range(0, len(flattened_board), m)]
-    for y, row in enumerate(reversed(board)):  # Print rows from top to bottom
-        for value in row:
-            board_str += f"{value:.2f} " if value != 0.0 else "____ "
-        if y < len(board) - 1:
+    probs = [flattened_probs[i : i + m] for i in range(0, len(flattened_probs), m)]
+    for y, (board_row, prob_row) in enumerate(
+        zip(reversed(state.board), reversed(probs))
+    ):  # Print rows from top to bottom
+        for x, (stone, prob) in enumerate(zip(board_row, prob_row)):
+            is_last_stone = False
+            if state.last_action is not None:
+                is_last_stone = x == state.last_action.x and y == len(state.board) - 1 - state.last_action.y
+            board_str += (
+                f"{int(prob * 100):3}"  # Percentage
+                if stone is None
+                else f"  {stone.color.get_mark(is_last_stone=is_last_stone)}"
+            )
+            if x < m - 1:
+                board_str += " "
+        if y < n - 1:
             board_str += "\n"
     return board_str
 

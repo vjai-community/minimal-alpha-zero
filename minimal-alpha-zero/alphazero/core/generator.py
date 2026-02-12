@@ -80,7 +80,7 @@ class EvaluationConfig:
     competition_margin: float  # Should be positive and less than 1
     game: Game
     play_config: PlayConfig
-    log_competition: Optional[Callable[[os.PathLike, Game, PlayRecord], None]]
+    log_competition: Optional[Callable[[os.PathLike, PlayRecord], None]]
 
     def __init__(
         self,
@@ -89,7 +89,7 @@ class EvaluationConfig:
         competition_margin: float,
         game: Game,
         play_config: PlayConfig,
-        log_competition: Optional[Callable[[os.PathLike, Game, PlayRecord], None]] = None,
+        log_competition: Optional[Callable[[os.PathLike, PlayRecord], None]] = None,
     ):
         self.competitions_num = competitions_num
         self.competition_margin = competition_margin
@@ -255,8 +255,8 @@ def evaluate(
             result = -cur_result
         # Log the moves.
         if output_dir is not None and config.log_competition is not None:
-            competition_file_path = output_dir / f"competition-{competition_index:0{len(str(competitions_num))}d}.txt"
-            config.log_competition(competition_file_path, game, (last_state, moves, cur_result))
+            competition_file_path = output_dir / f"competition-{competition_index:0{len(str(competitions_num))}d}.log"
+            config.log_competition(competition_file_path, (last_state, moves, cur_result))
         return result
 
     if output_dir is not None:
@@ -268,7 +268,7 @@ def evaluate(
     result = sum(results) / competitions_num
     # Log the result.
     if output_dir is not None:
-        with open(output_dir / "@result.txt", "w") as result_file:
+        with open(output_dir / "@result.log", "w") as result_file:
             result_file.write(f"model1={model1.name}, model2={model2.name}, result={result}\n")
     logger.info(f"model1={model1.name}, model2={model2.name}, result={result}")
     if abs(result) >= config.competition_margin:

@@ -92,6 +92,7 @@ def main():
         log_competition=log_competition,
     )
     mnk_training_config = MnkTrainingConfig(
+        data_split_ratio=0.9,
         learning_rate=0.0005,
         epochs_num=100,
         batch_size=128,
@@ -132,10 +133,10 @@ def main():
 
         # Generate only last moves from a dummy player.
         with (
-            open(data_output_dir / "dummy_last_moves-00_original.txt", "w") as original_data_file,
-            open(data_output_dir / "dummy_last_moves-01_vertical.txt", "w") as vertical_data_file,
-            open(data_output_dir / "dummy_last_moves-02_horizontal.txt", "w") as horizontal_data_file,
-            open(data_output_dir / "dummy_last_moves-03_central.txt", "w") as central_data_file,
+            open(data_output_dir / "dummy_last_moves-00_original.log", "w") as original_data_file,
+            open(data_output_dir / "dummy_last_moves-01_vertical.log", "w") as vertical_data_file,
+            open(data_output_dir / "dummy_last_moves-02_horizontal.log", "w") as horizontal_data_file,
+            open(data_output_dir / "dummy_last_moves-03_central.log", "w") as central_data_file,
         ):
             for _, data_list in generate_data((dummy_model, dummy_model_config), dummy_generation_config):
                 original_data = data_list[-1]  # Last move
@@ -156,7 +157,7 @@ def main():
                     highest_prob_count = probs.count(highest_prob)
                     probs = [1.0 / highest_prob_count if p == highest_prob else 0.0 for p in probs]
                     data_file.write(f"{state}\n")
-                    data_file.write(f"Probabilities:\n{format_board(probs, m)}\n")
+                    data_file.write(f"Probabilities (%):\n{format_board(state, probs)}\n")
                     data_file.write(f"Reward: {reward:.2f}\n")
                     data_file.write("\n")
                     data_file.flush()
@@ -170,10 +171,10 @@ def main():
             data_file_name = f"self_play-{j:0{len(str(generation_config.self_plays_num))}d}"
             # Store and log the training data.
             with (
-                open(data_output_dir / f"{data_file_name}-00_original.txt", "w") as original_data_file,
-                open(data_output_dir / f"{data_file_name}-01_vertical.txt", "w") as vertical_data_file,
-                open(data_output_dir / f"{data_file_name}-02_horizontal.txt", "w") as horizontal_data_file,
-                open(data_output_dir / f"{data_file_name}-03_central.txt", "w") as central_data_file,
+                open(data_output_dir / f"{data_file_name}-00_original.log", "w") as original_data_file,
+                open(data_output_dir / f"{data_file_name}-01_vertical.log", "w") as vertical_data_file,
+                open(data_output_dir / f"{data_file_name}-02_horizontal.log", "w") as horizontal_data_file,
+                open(data_output_dir / f"{data_file_name}-03_central.log", "w") as central_data_file,
             ):
                 for data_file in [original_data_file, vertical_data_file, horizontal_data_file, central_data_file]:
                     detailed_model_names = [
@@ -194,7 +195,7 @@ def main():
                         replay_buffer.append_to_newest_buffer(data)
                         state, search_probs, reward = data
                         data_file.write(f"{state}\n")
-                        data_file.write(f"Search probabilities:\n{format_board(search_probs, m)}\n")
+                        data_file.write(f"Search probabilities (%):\n{format_board(state, search_probs)}\n")
                         data_file.write(f"Reward: {reward:.2f}\n")
                         data_file.write("\n")
                         data_file.flush()
