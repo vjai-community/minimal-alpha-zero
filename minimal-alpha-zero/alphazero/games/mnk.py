@@ -305,31 +305,17 @@ class MnkModel(nnx.Module, Model):
             nnx.BatchNorm(64, rngs=rngs),
             nnx.relu,
         )
-        self.body_convs = nnx.List(
-            [
-                nnx.Sequential(
-                    nnx.Conv(64, 64, kernel_size=3, rngs=rngs),
-                    nnx.BatchNorm(64, rngs=rngs),
-                    nnx.relu,
-                ),
-            ]
-        )
         # Fully connected
         self.fc = nnx.Sequential(
-            nnx.Linear(64 * m * n, 128, rngs=rngs),
-            nnx.relu,
-            nnx.Linear(128, 128, rngs=rngs),
+            nnx.Linear(64 * m * n, 64, rngs=rngs),
             nnx.relu,
         )
         # Heads
-        self.prior_probs_head = nnx.Linear(128, m * n, rngs=rngs)
-        self.value_head = nnx.Linear(128, 1, rngs=rngs)
+        self.prior_probs_head = nnx.Linear(64, m * n, rngs=rngs)
+        self.value_head = nnx.Linear(64, 1, rngs=rngs)
 
     def __call__(self, x: Array) -> tuple[Array, Array]:
         x = self.stem_conv(x)
-        for body_conv in self.body_convs:
-            # TODO: Consider adding a residual connection.
-            x = body_conv(x)
         x = x.reshape(x.shape[0], -1)  # Flatten
         x = self.fc(x)
         prior_probs_output = self.prior_probs_head(x)  # Raw logits
