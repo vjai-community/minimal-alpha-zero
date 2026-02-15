@@ -293,7 +293,7 @@ def _play(
     # we must check whether the next state exists in the tree.
     # Theoretically, we could do this by storing only a root node for each model and performing a recursive search,
     # but since this approach is inefficient, we store the list of existing states in `state_caches` variable for faster checking.
-    state_caches: list[dict[State, Node]] = [{} for _ in range(len(model_specs))]
+    state_caches: list[dict[tuple[State, State], Node]] = [{} for _ in range(len(model_specs))]
     mcts_simulations_nums: list[Optional[int]] = [
         c.calc_mcts_simulations_num() if c.calc_mcts_simulations_num is not None else None for _, c in model_specs
     ]
@@ -338,8 +338,8 @@ def _play(
         # Move to the next model and next node.
         i += 1
         state = node.children[action].node.state
-        if state in state_caches[i % len(model_specs)]:
-            node = state_caches[i % len(model_specs)][state]
+        if (node.state, state) in state_caches[i % len(model_specs)]:
+            node = state_caches[i % len(model_specs)][(node.state, state)]
         else:
             # Because trees are independent across different models, when we switch to the tree of the next model,
             # there is a chance that the new state has not been discovered by that model;
@@ -351,7 +351,7 @@ def _play(
 
 
 def _execute_mcts(
-    state_cache: dict[State, Node],
+    state_cache: dict[tuple[State, State], Node],
     node: Node,
     game: Game,
     model: Model,
@@ -363,7 +363,7 @@ def _execute_mcts(
     Execute multiple MCTS simulations.
     """
 
-    def _execute_one_simulation(root: Node, game: Game, model: Model, c_puct: float) -> dict[State, Node]:
+    def _execute_one_simulation(root: Node, game: Game, model: Model, c_puct: float) -> dict[tuple[State, State], Node]:
         """
         Return a dictionary mapping each expanded state to its corresponding node.
         NOTE: By "root", we mean the node where MCTS simulation begins, not an initial game state.
@@ -381,14 +381,15 @@ def _execute_mcts(
             edges.append(edge)
             # Move to the next node.
             node = edge.node
-        expanded_states: dict[State, Node] = {}
+        expanded_states: dict[tuple[State, State], Node] = {}
         # We evaluate a leaf node only once during a game play.
         # If the node is not a leaf, it should be a terminal node, in that case, we do not expand it again.
         if node.is_leaf:
             # Expand and evaluate a leaf node.
             _expand(node, game, model)
             for edge in node.children.values():
-                expanded_states[edge.node.state] = edge.node
+                # Include the parent state in the key because the same child state name may exist under different parents.
+                expanded_states[(node.state, edge.node.state)] = edge.node
         # Update edge statistics in a backward pass through each move.
         _backup(edges, node.value)
         return expanded_states

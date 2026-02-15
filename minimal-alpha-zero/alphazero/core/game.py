@@ -29,6 +29,18 @@ class State(ABC):
     """
 
     @abstractmethod
+    def __eq__(self):
+        """
+        Used to distinguish it from other states.
+        """
+
+    @abstractmethod
+    def __hash__(self):
+        """
+        Used as a dictionary key (ref: `.generator._play` function).
+        """
+
+    @abstractmethod
     def make_input_data(self) -> InputData:
         """
         NOTE:
