@@ -74,6 +74,7 @@ def main():
         return max(temperature, MIN_TEMPERATURE)
 
     mnk_game = MnkGame(m, n, k, should_prefer_fast_win=True)
+    lazy_model_config = ModelConfig(calc_mcts_simulations_num=None)
     mnk_model_config = ModelConfig(calc_mcts_simulations_num=lambda: m * n * 10)  # TODO: Tune this hyperparameter
     baseline_model_config = ModelConfig(calc_mcts_simulations_num=lambda: m * n * 10)
     generation_config = GenerationConfig(
@@ -121,7 +122,7 @@ def main():
     # Training and evaluating.
     evaluate(
         (dummy_model, baseline_model_config),
-        (mnk_network.get_best_model(), mnk_model_config),
+        (mnk_network.get_best_model(), lazy_model_config),
         evaluation_config,
         output_dir=run_dir / "initial" / EVALUATION_DUMMY_BEST_DIR_NAME,
     )
@@ -156,12 +157,12 @@ def main():
             j += 1
         logger.info(f"replay_buffer_len={sum(len(b) for b in replay_buffer.buffer_queue)}")
         is_best_model_updated = mnk_network.train_and_evaluate(
-            replay_buffer, mnk_training_config, evaluation_config, mnk_model_config, output_dir
+            replay_buffer, mnk_training_config, evaluation_config, lazy_model_config, output_dir
         )
         if is_best_model_updated:
             evaluate(
                 (dummy_model, baseline_model_config),
-                (mnk_network.get_best_model(), mnk_model_config),
+                (mnk_network.get_best_model(), lazy_model_config),
                 evaluation_config,
                 output_dir=output_dir / EVALUATION_DUMMY_BEST_DIR_NAME,
             )
