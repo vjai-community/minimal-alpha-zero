@@ -45,13 +45,11 @@ logger = logging.getLogger(__name__)
 
 def main():
     # Configs
+    WORKERS_NUM = 1
     ITERATIONS_NUM = 100
     ITERATION_STOPPING_PATIENCE = 2
-    # We want the first player to be able to force a win.
     # Doc: https://en.wikipedia.org/wiki/M,n,k-game#Specific_results.
-    m, n, k = 6, 5, 4
-    # If we want the first player to be unable to always force a win, but still have a reasonable chance of winning,
-    # consider choosing: m, n, k = (5, 5, 4)
+    m, n, k = 8, 1, 2
     seed = int(time.time() * 1000)
     logger.info(f"seed={seed}, run_time={run_time}")
     random.seed(seed)
@@ -74,11 +72,11 @@ def main():
         return max(temperature, MIN_TEMPERATURE)
 
     mnk_game = MnkGame(m, n, k, should_prefer_fast_win=True)
-    lazy_model_config = ModelConfig(calc_mcts_simulations_num=None)
-    mnk_model_config = ModelConfig(calc_mcts_simulations_num=lambda: m * n * 10)  # TODO: Tune this hyperparameter
-    baseline_model_config = ModelConfig(calc_mcts_simulations_num=lambda: m * n * 10)
+    lazy_model_config = ModelConfig(calc_mcts_simulations_num=lambda: m * n * 5)
+    mnk_model_config = ModelConfig(calc_mcts_simulations_num=lambda: m * n)  # TODO: Tune this hyperparameter
+    baseline_model_config = ModelConfig(calc_mcts_simulations_num=lambda: m * n)
     generation_config = GenerationConfig(
-        self_plays_num=1000,
+        self_plays_num=250,
         game=mnk_game,
         play_config=PlayConfig(
             c_puct=c_puct,
@@ -91,7 +89,7 @@ def main():
         ),
     )
     evaluation_config = EvaluationConfig(
-        competitions_num=250,
+        competitions_num=1,
         competition_margin=0.1,
         game=mnk_game,
         play_config=PlayConfig(
@@ -125,7 +123,10 @@ def main():
         (mnk_network.get_best_model(), lazy_model_config),
         evaluation_config,
         output_dir=run_dir / "initial" / EVALUATION_DUMMY_BEST_DIR_NAME,
+        workers_num=WORKERS_NUM,
     )
+    import sys
+    sys.exit(0)
     i = 0
     iteration_patience_count = 0
     while True:
@@ -135,7 +136,9 @@ def main():
         os.makedirs(data_output_dir, exist_ok=True)
         j = 0
         replay_buffer.enqueue_new_buffer()  # Store the data from each iteration in separate buffers
-        for _, data_list in generate_data((mnk_network.get_best_model(), mnk_model_config), generation_config):
+        for _, data_list in generate_data(
+            (mnk_network.get_best_model(), mnk_model_config), generation_config, workers_num=WORKERS_NUM
+        ):
             data_file_name = f"self_play-{j:0{len(str(generation_config.self_plays_num))}d}"
             # Store and log the training data.
             with open(data_output_dir / f"{data_file_name}.log", "w") as data_file:
@@ -165,6 +168,7 @@ def main():
                 (mnk_network.get_best_model(), lazy_model_config),
                 evaluation_config,
                 output_dir=output_dir / EVALUATION_DUMMY_BEST_DIR_NAME,
+                workers_num=WORKERS_NUM,
             )
             iteration_patience_count = 0
             # Discard the oldest buffers after updating the best model.

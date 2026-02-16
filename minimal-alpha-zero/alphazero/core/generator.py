@@ -2,6 +2,7 @@
 Use the best model to generate data for further training.
 """
 
+import copy
 import logging
 import math
 import os
@@ -297,10 +298,12 @@ def _play(
     mcts_simulations_nums: list[Optional[int]] = [
         c.calc_mcts_simulations_num() if c.calc_mcts_simulations_num is not None else None for _, c in model_specs
     ]
+    parent_node: Optional[Node] = None
     node = Node(game.begin())
     moves: list[tuple[str, State, list[float], list[float], float]] = []
     reward = 0.0
     i = 0
+    print("==================================================")
     while True:
         # The final reward is computed at this state, but it is assigned to the last move that produced this state.
         reward = game.receive_reward_if_terminal(node.state)
@@ -313,6 +316,8 @@ def _play(
         mcts_simulations_num = mcts_simulations_nums[i % len(model_specs)]
         if mcts_simulations_num is not None:
             state_cache = state_caches[i % len(model_specs)]
+            if len(state_cache) == 0:
+                state_cache[(parent_node.state if parent_node is not None else None, node.state)] = node
             _execute_mcts(state_cache, node, game, model, mcts_simulations_num, config.c_puct, noise_session)
             # Select a move according to the search probabilities π computed by MCTS.
             # π(a|s) = N(s,a)^(1/τ) / (∑b N(s,b)^(1/τ))
@@ -335,18 +340,39 @@ def _play(
         all_search_probs = [search_probs[a] if a in search_probs else 0.0 for a in all_actions]
         moves.append((model.name, node.state, all_prior_probs, all_search_probs, node.value))
         action = random.choices(all_actions, weights=all_search_probs)[0]  # Next action
+        # Prune branches that contain unselected actions.
+        print("----------")
+        print(node.state)
+        print(all_search_probs, action)
+        if parent_node is not None:
+            for j in range(len(state_caches)):
+                print(model_specs[j][0].name)
+                for parent_state, state in state_caches[j]:
+                    print(state)
+                if (parent_node.state, node.state) in state_caches[j]:
+                    _prune(state_caches[j][(parent_node.state, node.state)], state_caches[j], selected_action=action)
+                else:
+                    print("EMPTY", node.state)
+                    state_caches[j] = {}
+                print()
+        else:
+            _prune(node, state_caches[i % len(model_specs)], selected_action=action)
         # Move to the next model and next node.
         i += 1
         state = node.children[action].node.state
         if (node.state, state) in state_caches[i % len(model_specs)]:
-            node = state_caches[i % len(model_specs)][(node.state, state)]
+            parent_node, node = node, state_caches[i % len(model_specs)][(node.state, state)]
+            print(model_specs[i % len(model_specs)][0].name, "WOW", len(state_caches[i % len(model_specs)]))
+            for parent_state, state in state_caches[i % len(model_specs)]:
+                print(state)
         else:
             # Because trees are independent across different models, when we switch to the tree of the next model,
             # there is a chance that the new state has not been discovered by that model;
             # therefore, the corresponding node does not exist in the tree.
             # In that case, we create a new root node and reset the entire tree for the next model.
-            node = Node(state)
-            state_caches[i % len(model_specs)] = {}
+            parent_node, node = node, Node(copy.deepcopy(state))
+            print(model_specs[i % len(model_specs)][0].name, "OH NO", len(state_caches[i % len(model_specs)]))
+        # print()
     return node.state, moves, reward
 
 
@@ -400,12 +426,18 @@ def _execute_mcts(
         # Run an initial simulation to expand a leaf node.
         for expanded_state, expanded_node in _execute_one_simulation(node, game, model, c_puct).items():
             state_cache[expanded_state] = expanded_node
+            # print(index)
+            # print(expanded_state[1])
+            # print()
     # Add noise to the root node.
     if noise_session is not None:
         _add_noise(node, noise_session)
     while i < simulations_num:
         for expanded_state, expanded_node in _execute_one_simulation(node, game, model, c_puct).items():
             state_cache[expanded_state] = expanded_node
+            # print(index)
+            # print(expanded_state[1])
+            # print()
         # Next simulation.
         i += 1
 
@@ -476,6 +508,27 @@ def _backup(edges: list[Edge], value: float):
         cur_value = value * (-1 if is_current_player_last_mover else 1)
         edge.action_value = (edge.action_value * edge.visit_count + cur_value) / (edge.visit_count + 1)
         edge.visit_count += 1
+
+
+def _prune(node: Node, state_cache: dict[tuple[State, State], Node], selected_action: Optional[Action] = None):
+    """
+    Discard unselected branches.
+    """
+    # TODO: Discard the `node` as well.
+    for action, edge in node.children.items():
+        if selected_action is not None and action == selected_action:
+            continue
+        _prune(edge.node, state_cache)
+        # print(hash((node.state, edge.node.state)))
+        state_cache.pop((node.state, edge.node.state), None)
+        # print(index)
+        # print(edge.node.state)
+        # if p is None:
+        #     print("OMG", hash((node.state, edge.node.state)), action, selected_action)
+        #     print(edge.node.state)
+        #     import sys
+
+        #     sys.exit(0)
 
 
 def _add_noise(node: Node, session: NoiseSession):
