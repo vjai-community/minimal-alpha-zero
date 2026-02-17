@@ -278,6 +278,25 @@ def evaluate(
         return None
 
 
+def execute_mcts_fresh(
+    state: State,
+    game: Game,
+    model: Model,
+    simulations_num: int,
+    c_puct: float,
+) -> tuple[dict[Action, float], float]:
+    """
+    Execute MCTS from a given state using a fresh tree.
+    """
+    node = Node(state)
+    _execute_mcts(node, game, model, simulations_num, c_puct, None)
+    visit_counts = {a: e.visit_count for a, e in node.children.items()}
+    visit_counts_sum = sum(visit_counts.values())
+    value = sum(e.visit_count * e.action_value for e in node.children.values()) / visit_counts_sum
+    legal_probs = {a: c / visit_counts_sum for a, c in visit_counts.items()}
+    return legal_probs, value
+
+
 def _play(
     game: Game,
     model_specs: list[tuple[Model, ModelConfig]],

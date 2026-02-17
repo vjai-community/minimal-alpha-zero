@@ -51,6 +51,8 @@ class Stone:
         self.color = color
 
     def __eq__(self, value: "Stone"):
+        if not isinstance(value, Stone):
+            return False
         return self.color == value.color
 
 
