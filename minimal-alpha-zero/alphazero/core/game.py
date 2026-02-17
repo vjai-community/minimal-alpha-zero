@@ -31,13 +31,8 @@ class State(ABC):
     @abstractmethod
     def __eq__(self):
         """
-        Used to distinguish it from other states.
-        """
-
-    @abstractmethod
-    def __hash__(self):
-        """
-        Used as a dictionary key (ref: `.generator._play` function).
+        Used to distinguish it from other states when checking consistency between trees built by different models during play.
+        Ref: `.generator._play` function.
         """
 
     @abstractmethod

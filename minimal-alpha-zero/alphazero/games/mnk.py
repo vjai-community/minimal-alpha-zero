@@ -53,9 +53,6 @@ class Stone:
     def __eq__(self, value: "Stone"):
         return self.color == value.color
 
-    def __hash__(self):
-        return hash(self.color)
-
 
 class MnkAction(Action):
     """ """
@@ -111,10 +108,11 @@ class MnkState(State):
         self.last_action = last_action
 
     def __eq__(self, value: "MnkState"):
-        return self.board == value.board
-
-    def __hash__(self):
-        return hash(tuple([s for r in self.board for s in r]))
+        return (
+            self.board == value.board
+            and self.stone_count == value.stone_count
+            and self.last_action == value.last_action
+        )
 
     def make_input_data(self) -> MnkInputData:
         """ """
