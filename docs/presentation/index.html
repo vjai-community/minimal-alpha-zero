@@ -1,40 +1,270 @@
 <!doctype html>
 <html lang="en">
-	<head>
-		<meta charset="utf-8">
-		<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 
-		<title>reveal.js</title>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Minimal AlphaZero</title>
+  <link rel="stylesheet" href="dist/reset.css">
+  <link rel="stylesheet" href="dist/reveal.css">
+  <link rel="stylesheet" href="dist/theme/black.css">
+  <link rel="stylesheet" href="plugin/highlight/monokai.css">
+  <style>
+    :root {
+      --r-heading-text-transform: none;
+      --r-main-font-size: 36px;
+    }
 
-		<link rel="stylesheet" href="dist/reset.css">
-		<link rel="stylesheet" href="dist/reveal.css">
-		<link rel="stylesheet" href="dist/theme/black.css">
+    /* Custom */
 
-		<!-- Theme used for syntax highlighted code -->
-		<link rel="stylesheet" href="plugin/highlight/monokai.css">
-	</head>
-	<body>
-		<div class="reveal">
-			<div class="slides">
-				<section>Slide 1</section>
-				<section>Slide 2</section>
-			</div>
-		</div>
+    .color-gray {
+      color: #6c757d;
+    }
 
-		<script src="dist/reveal.js"></script>
-		<script src="plugin/notes/notes.js"></script>
-		<script src="plugin/markdown/markdown.js"></script>
-		<script src="plugin/highlight/highlight.js"></script>
-		<script>
-			// More info about initialization & config:
-			// - https://revealjs.com/initialization/
-			// - https://revealjs.com/config/
-			Reveal.initialize({
-				hash: true,
+    .color-blue {
+      color: #007bff;
+    }
 
-				// Learn about plugins: https://revealjs.com/plugins/
-				plugins: [ RevealMarkdown, RevealHighlight, RevealNotes ]
-			});
-		</script>
-	</body>
+    .color-cyan {
+      color: #17a2b8;
+    }
+
+    .color-green {
+      color: #28a745;
+    }
+
+    .color-yellow {
+      color: #ffc107;
+    }
+
+    .color-red {
+      color: #dc3545;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="reveal">
+    <div class="slides">
+      <section data-markdown style="text-align: left;">
+        <textarea data-template>
+          ## Table of Contents
+          </textarea>
+      </section>
+
+      <section>
+        <section data-markdown style="text-align: left;">
+          <textarea data-template>
+            ## 1. Overview
+            ### 1.1. Introduction
+            - AlphaGo: Defeated human grandmasters at a professional level.
+            - AlphaGo Zero: Defeated its own predecessor.
+            - AlphaZero: Defeated Stockfish, the gold standard for Chess engines.
+            <div>
+              <img style="width: 320px;"
+                src="https://images.liverpoolmuseums.org.uk/styles/dynamic_medium/public/2021-02/AlphaGo%20vs%20Lee%20Sodol%20%C2%A9AlphaGo%20Movie.jpg" />
+              <img style="width: 320px;"
+                src="https://www.telegraph.co.uk/content/dam/science/2018/12/06/The-AlphaZero-team-at-work_trans_NvBQzQNjv4BqzyN9BNfgYa9w_bm-WzgI4xzQs3t1VN0X7FXw_AXaq80.jpg" />
+            </div>
+          </textarea>
+        </section>
+        <section data-markdown style="text-align: left;">
+          <textarea data-template>
+            ## 1. Overview
+            ### 1.2. Reinforcement Learning
+            - Is the method used for training AlphaZero.
+            - One of the most automated and declarative paradigms:
+            ||Data Collection|Rules Learning|
+            |---|---|---|
+            |Traditional Programming|<span class="color-red">Human</span>|<span class="color-red">Human</span>|
+            |Machine Learning<br/>(Supervised/Unsupervised)|<span class="color-red">Human</span>|<span class="color-green">Machine</span>|
+            |Reinforcement Learning|<span class="color-green">Machine</span>|<span class="color-green">Machine</span>|
+            |<span class="color-gray">Vibe Coding (lol)</span>|<span class="color-gray">Who cares?</span>|<span class="color-gray">Who cares?</span>|
+          </textarea>
+        </section>
+        <section data-markdown style="text-align: left;">
+          <textarea data-template>
+            ## 1. Overview
+            ### 1.3. Challenges
+            - System Design: Handling data pipelines is often more difficult than training models, as it <span class="color-cyan"><em>requires advanced engineering skills</em></span> to fully optimize.
+            - Board Game Properties:
+              - The number of possible board positions can be <span class="color-cyan"><em>astronomically huge</em></span>. For example, in Go, it is roughly $10^{170}$.
+              - Small input size but <span class="color-cyan"><em>highly dense information</em></span>.
+              - The value of a state is subjective to the player's perspective and can <span class="color-cyan"><em>shift dramatically even with minor changes</em></span>.
+              - The final result is <span class="color-cyan"><em>difficult to predict</em></span> from an early state, even for strong players.
+          </textarea>
+        </section>
+        <section data-markdown style="text-align: left;">
+          <textarea data-template>
+            ## 1. Overview
+            ### 1.4. Source Code
+            [https://github.com/vjai-community/minimal-alpha-zero](https://github.com/vjai-community/minimal-alpha-zero)
+            - Written from scratch (using Flax for model training).
+            - Trained for an [m,n,k-game](https://en.wikipedia.org/wiki/M,n,k-game) on a small board (m=6, n=5, k=4).
+            - The model is lightweight and does not require a GPU.
+            - Training completes within several hours (using a MacBook or Ryzen with multiple cores).
+          </textarea>
+        </section>
+        <section data-markdown style="text-align: left;">
+          <textarea data-template>
+            ## 1. Overview
+            ### 1.5. Components
+            <object data="slides/components.drawio.svg" type="image/svg+xml" style="width: 100%;"></object>
+          </textarea>
+        </section>
+      </section>
+
+      <section>
+        <section data-markdown style="text-align: left;">
+          <textarea data-template>
+            ## 2. MCTS
+            <object data="slides/components.drawio.svg" type="image/svg+xml" style="width: 100%;"></object>
+          </textarea>
+        </section>
+        <section data-markdown style="text-align: left;">
+          <textarea data-template>
+            ## 2. MCTS
+            ### 2.1. Core algorithm
+          </textarea>
+        </section>
+        <section data-markdown style="text-align: left;">
+          <textarea data-template>
+            ## 2. MCTS
+            ### 2.2. Example: Tic-tac-toe Game Ending
+            <iframe data-src="slides/mcts.html" data-preload style="width: 100vw; height: 100vh;"></iframe>
+          </textarea>
+        </section>
+      </section>
+
+      <section>
+        <section data-markdown style="text-align: left;">
+          <textarea data-template>
+            ## 3. Data Collection
+            <object data="slides/components.drawio.svg" type="image/svg+xml" style="width: 100%;"></object>
+          </textarea>
+        </section>
+      </section>
+
+      <section>
+        <section data-markdown style="text-align: left;">
+          <textarea data-template>
+            ## 4. Model Training
+            <object data="slides/components.drawio.svg" type="image/svg+xml" style="width: 100%;"></object>
+          </textarea>
+        </section>
+        <section data-markdown style="text-align: left;">
+          <textarea data-template>
+            ## 4. Model Training
+            ### 4.1. Training Flow
+            <object data="slides/training_flow.drawio.svg" type="image/svg+xml" style="width: 100%;"></object>
+          </textarea>
+        </section>
+        <section data-markdown style="text-align: left;">
+          <textarea data-template>
+            ## 4. Model Training
+            ### 4.2. Model Architecture
+          </textarea>
+        </section>
+      </section>
+
+      <section>
+        <section data-markdown style="text-align: left;">
+          <textarea data-template>
+            ## 5. Interesting Insights
+            ### 5.1. Empty Board
+            The model learned that, starting from an empty board, the first player should <span class="color-cyan"><em>focus on the center of the board</em></span>.
+            <br/><br/>
+            <object data="slides/empty_board.drawio.svg" type="image/svg+xml" style="width: 100%;"></object>
+          </textarea>
+        </section>
+        <section data-markdown style="text-align: left;">
+          <textarea data-template>
+            ## 5. Interesting Insights
+            ### 5.2. Threats
+            Even after training, the model is still not smart enough to recognize all threats; <span class="color-cyan"><em>the key to AlphaZero's strength lies in MCTS</em></span>.
+            <br/><br/>
+            <object data="slides/threats.drawio.svg" type="image/svg+xml" style="width: 100%;"></object>
+          </textarea>
+        </section>
+      </section>
+
+      <section>
+        <section data-markdown style="text-align: left;">
+          <textarea data-template>
+            ## 6. Lessons Learned
+            - Should not use Pooling
+          </textarea>
+        </section>
+      </section>
+
+      <section>
+        <section data-markdown style="text-align: left;">
+          <textarea data-template>
+            ## 7. Summary
+            ### 7.1. Core Takeaways
+            - Given enough time and a sufficiently large number of simulations, <span class="color-cyan"><em>MCTS can find the optimal path</em></span> to a high reward, regardless of how inaccurate the initial prior probabilities and state values are.
+            - Training in AlphaZero is equivalent to <span class="color-cyan"><em>teaching the neural network to mimic MCTS search results</em></span>. As training progresses, the network's raw outputs resemble a search with a high number of simulations, making the model stronger.
+          </textarea>
+        </section>
+        <section data-markdown style="text-align: left;">
+          <textarea data-template>
+            ## 7. Summary
+            ### 7.2. Keywords
+            - *Monte Carlo Tree Search*
+            - *AlphaGo*, *AlphaZero*
+            - Other references:
+              - *MuZero*
+              - *NNUE* (Stockfish)
+          </textarea>
+        </section>
+        <section data-markdown style="text-align: left;">
+          <textarea data-template>
+            ## 7. Summary
+            ### 7.3. Further Reading
+            - AlphaGo's paper: [Mastering the game of Go with deep neural networks and tree search](https://www.semanticscholar.org/paper/Mastering-the-game-of-Go-with-deep-neural-networks-Silver-Huang/846aedd869a00c09b40f1f1f35673cb22bc87490)
+            - AlphaGo Zero's paper (main paper of this project): [Mastering the game of Go without human knowledge](https://www.semanticscholar.org/paper/Mastering-the-game-of-Go-without-human-knowledge-Silver-Schrittwieser/c27db32efa8137cbf654902f8f728f338e55cd1c)
+            - AlphaZero's paper: [A general reinforcement learning algorithm that masters chess, shogi, and Go through self-play](https://www.semanticscholar.org/paper/A-general-reinforcement-learning-algorithm-that-and-Silver-Hubert/f9717d29840f4d8f1cc19d1b1e80c5d12ec40608) ([Supplementary Material](https://www.science.org/doi/10.1126/science.aar6404))
+          </textarea>
+        </section>
+      </section>
+
+      <section>
+        <section data-markdown>
+          <textarea data-template>
+            ## Closing Words
+            <blockquote style="padding: 15px 30px; text-align: left;">
+              We are human.<br/>
+              <span class="color-cyan"><em>Let nothing stop you: not AI, not others, and most importantly, not yourself.</em></span><br/>
+              If even an AI can learn, why can't we?
+            </blockquote>
+            Bonus: "AlphaGo - The Movie | Full award-winning documentary"
+            <iframe width="560" height="315" src="https://www.youtube.com/embed/WXuK6gekU1Y"
+              frameborder="0" referrerpolicy="strict-origin-when-cross-origin">
+            </iframe>
+          </textarea>
+        </section>
+      </section>
+    </div>
+  </div>
+
+  <script src="dist/reveal.js"></script>
+  <script src="plugin/notes/notes.js"></script>
+  <script src="plugin/markdown/markdown.js"></script>
+  <script src="plugin/math/math.js"></script>
+  <script src="plugin/highlight/highlight.js"></script>
+  <script>
+    // More info about initialization & config:
+    // - https://revealjs.com/initialization/
+    // - https://revealjs.com/config/
+    Reveal.initialize({
+      width: 1024,
+      height: 768,
+      center: false,
+      hash: true,
+      // Learn about plugins: https://revealjs.com/plugins/
+      plugins: [RevealMarkdown, RevealMath.KaTeX, RevealHighlight, RevealNotes]
+    });
+  </script>
+</body>
+
 </html>
