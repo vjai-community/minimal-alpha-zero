@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MCTS</title>
+  <script src="https://d3js.org/d3.v7.min.js"></script>
+  <style>
+    :root {
+      color: #e6e6e6;
+    }
+
+    body {
+      font-family: sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    #canvas {
+      background: #4d4d4d;
+      margin-bottom: 10px;
+      padding: 10px 40px;
+    }
+
+    .edge {
+      stroke: #999999;
+      stroke-dasharray: 1 2;
+    }
+
+    button {
+      padding: 10px 20px;
+      font-size: 16px;
+      cursor: pointer;
+      color: inherit;
+      background: #17a2b8;
+      border: none;
+      border-radius: 4px;
+    }
+
+    button:hover {
+      background: #138496;
+    }
+  </style>
+</head>
+
+<body>
+  <svg id="canvas"></svg>
+  <button id="next-button">Next simulation</button>
+  <script>
+    const nodeSize = 65;
+    const nodeRowHeight = 120;
+    const nodeColWidth = 240;
+    const data = {
+      nodes: {
+        "A": { value: null, reward: null, fileName: "A", x: nodeColWidth * 2 + nodeSize / 2, y: nodeSize / 2 },
+        "B": { value: null, reward: 1, fileName: "B", x: nodeSize / 2, y: nodeRowHeight + nodeSize / 2 },
+        "C": { value: null, reward: null, fileName: "C", x: nodeColWidth * 1.5 + nodeSize / 2, y: nodeRowHeight + nodeSize / 2 },
+        "D": { value: null, reward: null, fileName: "D", x: nodeColWidth * 3.5 + nodeSize / 2, y: nodeRowHeight + nodeSize / 2 },
+        "E": { value: null, reward: null, fileName: "E", x: nodeColWidth * 1 + nodeSize / 2, y: nodeRowHeight * 2 + nodeSize / 2 },
+        "F": { value: null, reward: null, fileName: "F", x: nodeColWidth * 2 + nodeSize / 2, y: nodeRowHeight * 2 + nodeSize / 2 },
+        "G": { value: null, reward: null, fileName: "G", x: nodeColWidth * 3 + nodeSize / 2, y: nodeRowHeight * 2 + nodeSize / 2 },
+        "H": { value: null, reward: 1, fileName: "H", x: nodeColWidth * 4 + nodeSize / 2, y: nodeRowHeight * 2 + nodeSize / 2 },
+        "I1": { value: null, reward: 1, fileName: "I", x: nodeColWidth * 1 + nodeSize / 2, y: nodeRowHeight * 3 + nodeSize / 2 },
+        "J": { value: null, reward: 1, fileName: "J", x: nodeColWidth * 2 + nodeSize / 2, y: nodeRowHeight * 3 + nodeSize / 2 },
+        "I2": { value: null, reward: 1, fileName: "I", x: nodeColWidth * 3 + nodeSize / 2, y: nodeRowHeight * 3 + nodeSize / 2 },
+      },
+      edges: {
+        "A": {
+          "B": { priorProb: null, actionValue: null, visitCount: null, puctScore: null },
+          "C": { priorProb: null, actionValue: null, visitCount: null, puctScore: null },
+          "D": { priorProb: null, actionValue: null, visitCount: null, puctScore: null },
+        },
+        "C": {
+          "E": { priorProb: null, actionValue: null, visitCount: null, puctScore: null },
+          "F": { priorProb: null, actionValue: null, visitCount: null, puctScore: null },
+        },
+        "D": {
+          "G": { priorProb: null, actionValue: null, visitCount: null, puctScore: null },
+          "H": { priorProb: null, actionValue: null, visitCount: null, puctScore: null },
+        },
+        "E": { "I1": { priorProb: null, actionValue: null, visitCount: null, puctScore: null }, },
+        "F": { "J": { priorProb: null, actionValue: null, visitCount: null, puctScore: null }, },
+        "G": { "I2": { priorProb: null, actionValue: null, visitCount: null, puctScore: null }, },
+      },
+      simulationsCount: null,
+    };
+    const history = [];
+    const canvas = d3
+      .select("#canvas")
+      .attr("width", nodeColWidth * 4 + nodeSize)
+      .attr("height", nodeRowHeight * 3 + nodeSize);
+    canvas
+      .selectAll(".edge")
+      .data(getEdgeData())
+      .join("line")
+      .attr("class", "edge")
+      .attr("x1", d => data.nodes[d.parent].x)
+      .attr("y1", d => data.nodes[d.parent].y)
+      .attr("x2", d => data.nodes[d.child].x)
+      .attr("y2", d => data.nodes[d.child].y);
+    canvas
+      .selectAll(".edge-puct-score")
+      .data(getEdgeData())
+      .join("text")
+      .attr("class", "edge-puct-score")
+      .attr("x", d => (data.nodes[d.parent].x + data.nodes[d.child].x) / 2)
+      .attr("y", d => (data.nodes[d.parent].y + data.nodes[d.child].y) / 2 - 10)
+      .attr("text-anchor", "middle");
+    canvas
+      .selectAll(".edge-action-value")
+      .data(getEdgeData())
+      .join("text")
+      .attr("class", "edge-action-value")
+      .attr("x", d => (data.nodes[d.parent].x + data.nodes[d.child].x) / 2)
+      .attr("y", d => (data.nodes[d.parent].y + data.nodes[d.child].y) / 2 + 5)
+      .attr("text-anchor", "middle");
+    canvas
+      .selectAll(".edge-visit-count")
+      .data(getEdgeData())
+      .join("text")
+      .attr("class", "edge-visit-count")
+      .attr("x", d => (data.nodes[d.parent].x + data.nodes[d.child].x) / 2)
+      .attr("y", d => (data.nodes[d.parent].y + data.nodes[d.child].y) / 2 + 20)
+      .attr("text-anchor", "middle");
+    canvas
+      .selectAll(".node")
+      .data(getNodeData())
+      .join("image")
+      .attr("class", "node")
+      .attr("href", d => `mcts/nodes/${d.fileName}.drawio.svg`)
+      .attr("x", d => d.x)
+      .attr("y", d => d.y)
+      .attr("width", nodeSize)
+      .attr("height", nodeSize)
+      .style("transform", `translate(-${nodeSize / 2}px, -${nodeSize / 2}px)`);
+    const simulationsCountText = canvas.append("text")
+      .attr("class", "counter")
+      .attr("x", 0)
+      .attr("y", "20px")
+      .attr("fill", "#999900")
+      .attr("font-size", "1.5em");
+    selectAndExpand(); // Expand the root node first
+    calculatePuctScore();
+    update([]);
+
+    d3.select("#next-button").on("click", () => {
+      const [visitedNodeIds, value] = selectAndExpand();
+      backup(visitedNodeIds, value);
+      calculatePuctScore();
+      update(visitedNodeIds);
+    });
+
+    function update(visitedNodeIds) {
+      canvas
+        .selectAll(".edge-puct-score")
+        .data(getEdgeData())
+        .attr("fill", d => visitedNodeIds.includes(d.parent) && visitedNodeIds.includes(d.child) ? "#17a2b8" : "#e6e6e6")
+        .attr("font-weight", d => visitedNodeIds.includes(d.parent) && visitedNodeIds.includes(d.child) ? "bold" : "normal")
+        .text(d => d.puctScore == null ? "" : `score: ${d.puctScore.toFixed(2)}`);
+      canvas
+        .selectAll(".edge-action-value")
+        .data(getEdgeData())
+        .attr("fill", d => visitedNodeIds.includes(d.parent) && visitedNodeIds.includes(d.child) ? "#17a2b8" : "#e6e6e6")
+        .attr("font-weight", d => visitedNodeIds.includes(d.parent) && visitedNodeIds.includes(d.child) ? "bold" : "normal")
+        .text(d => d.actionValue == null ? "" : `value: ${d.actionValue.toFixed(2)}`);
+      canvas
+        .selectAll(".edge-visit-count")
+        .data(getEdgeData())
+        .attr("fill", d => visitedNodeIds.includes(d.parent) && visitedNodeIds.includes(d.child) ? "#17a2b8" : "#e6e6e6")
+        .attr("font-weight", d => visitedNodeIds.includes(d.parent) && visitedNodeIds.includes(d.child) ? "bold" : "normal")
+        .text(d => d.visitCount == null ? "" : `visits: ${d.visitCount}`);
+      if (data.simulationsCount == null) {
+        data.simulationsCount = 0;
+      }
+      else {
+        data.simulationsCount += 1;
+      }
+      simulationsCountText.text(`Number of simulations: ${data.simulationsCount}`);
+    }
+
+    function getNodeData() {
+      // Inject the key into the value.
+      return Object.entries(data.nodes).map(([key, value]) => ({ id: key, ...value }));
+    }
+
+    function getEdgeData() {
+      // Flatten and inject the key into the value.
+      return Object.entries(data.edges).flatMap(([parent, children]) =>
+        Object.entries(children).map(([child, values]) => ({ parent: parent, child: child, ...values }))
+      );
+    }
+
+    function selectAndExpand() {
+      var nodeId = "A"; // Root node
+      const visitedNodeIds = [];
+      var isLeaf = false;
+      while (true) {
+        visitedNodeIds.push(nodeId);
+        isLeaf = data.nodes[nodeId].value == null;
+        const isFinished = isLeaf || data.nodes[nodeId].reward != null;
+        if (isFinished) {
+          break;
+        }
+        // Select the next node.
+        const children = data.edges[nodeId];
+        nodeId = Object.keys(children).reduce((prevId, curId) =>
+          children[prevId].puctScore >= children[curId].puctScore ? prevId : curId
+        );
+      }
+      if (isLeaf) {
+        // Expand the current node.
+        if (data.nodes[nodeId].reward != null) { // Terminal node
+          data.nodes[nodeId].value = -data.nodes[nodeId].reward;
+        } else {
+          data.nodes[nodeId].value = 0.0; // Dummy value
+          const priorProb = 1.0 / Object.keys(data.edges[nodeId]).length; // Dummy value
+          Object.entries(data.edges[nodeId]).forEach(([_, edge]) => {
+            edge.priorProb = priorProb;
+            edge.actionValue = 0.0;
+            edge.visitCount = 0;
+          });
+        }
+      }
+      return [visitedNodeIds, data.nodes[nodeId].value];
+    }
+
+    function backup(visitedNodeIds, value) {
+      visitedNodeIds.forEach((nodeId, i) => {
+        if (i == 0) {
+          // Skip the root node.
+          return;
+        }
+        const isCurrentPlayerLastMover = (visitedNodeIds.length - 1 - i) % 2 == 0;
+        const curValue = value * (isCurrentPlayerLastMover ? -1 : 1);
+        const parentNodeId = visitedNodeIds[i - 1];
+        const edge = data.edges[parentNodeId][nodeId];
+        edge.actionValue = (edge.actionValue * edge.visitCount + curValue) / (edge.visitCount + 1)
+        edge.visitCount += 1
+      });
+    }
+
+    function calculatePuctScore(visitedNodeIds, value) {
+      Object.entries(data.edges).forEach(([nodeId, edges]) => {
+        if (data.nodes[nodeId].value == null) {
+          return;
+        }
+        const visitCountsSum = Object.values(edges).reduce((sum, edge) => sum + edge.visitCount, 0);
+        Object.entries(edges).forEach(([_, edge]) => {
+          const exploitationTerm = edge.actionValue;
+          const cPuct = 4.0;
+          const explorationTerm = cPuct * edge.priorProb * Math.sqrt(visitCountsSum) / (1 + edge.visitCount);
+          edge.puctScore = exploitationTerm + explorationTerm;
+        });
+      });
+    }
+  </script>
+</body>
+
+</html>

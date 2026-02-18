@@ -80,13 +80,13 @@
           <textarea data-template>
             ## 1. Overview
             ### 1.1. Introduction
-            - AlphaGo: Defeated human grandmasters at a professional level.
+            - AlphaGo: プロレベルで人間のトップ棋士に勝利した.
             - AlphaGo Zero:
-              - Defeated its own predecessor.
-              - <span class="color-cyan"><em>Learned without human knowledge</em></span>.
+              - 自身の前世代モデルに勝利した.
+              - <span class="color-cyan"><em>人間の知識を使わずに学習した</em></span>.
             - AlphaZero:
-              - Defeated Stockfish, the gold standard for Chess engines.
-              - <span class="color-cyan"><em>General purpose</em></span>. Same algorithm plays Chess, Shogi, and Go.
+              - チェスエンジンの最高峰であるStockfishに勝利した.
+              - <span class="color-cyan"><em>汎用型</em></span>. 同じアルゴリズムでチェス、将棋、囲碁をプレイする.
             <div>
               <img style="width: 320px;"
                 src="https://images.liverpoolmuseums.org.uk/styles/dynamic_medium/public/2021-02/AlphaGo%20vs%20Lee%20Sodol%20%C2%A9AlphaGo%20Movie.jpg"/>
@@ -99,33 +99,33 @@
           <textarea data-template>
             ## 1. Overview
             ### 1.2. Reinforcement Learning
-            - Is the method used for training AlphaZero.
-            - One of the most <span class="color-cyan"><em>automated and declarative</em></span> paradigms:
+            - AlphaZero の学習に使用された手法.
+            - 最も<span class="color-cyan"><em>自動化され、宣言的な</em></span>パラダイムの一つ:
             ||Data Collection|Rules Learning|
             |---|---|---|
-            |Traditional Programming|<span class="color-red">Human</span>|<span class="color-red">Human</span>|
-            |Machine Learning<br/>(Supervised/Unsupervised)|<span class="color-red">Human</span>|<span class="color-green">Machine</span>|
-            |<span class="color-cyan"><em>Reinforcement Learning</em></span>|<span class="color-green">Machine</span>|<span class="color-green">Machine</span>|
-            |<span class="color-gray">Vibe Coding (lol)</span>|<span class="color-gray">Who cares?</span>|<span class="color-gray">Who cares?</span>|
+            |Traditional Programming|<span class="color-red">人間</span>|<span class="color-red">人間</span>|
+            |Machine Learning<br/>(Supervised/Unsupervised)|<span class="color-red">人間</span>|<span class="color-green">機械</span>|
+            |<span class="color-cyan"><em>Reinforcement Learning</em></span>|<span class="color-green">機械</span>|<span class="color-green">機械</span>|
+            |<span class="color-gray">Vibe Coding （笑）</span>|<span class="color-gray">どうでもいい</span>|<span class="color-gray">どうでもいい</span>|
           </textarea>
         </section>
         <section data-markdown style="text-align: left;">
           <textarea data-template>
             ## 1. Overview
             ### 1.3. Challenges
-            - System Design: Handling data pipelines is often more difficult than training models, as it <span class="color-cyan"><em>requires advanced engineering skills</em></span> to fully optimize.
-            - Board Game Properties:
-              - The number of possible board positions can be <span class="color-cyan"><em>astronomically huge</em></span>. For example, in Go, it is roughly $10^{170}$.
-              - Small input size but <span class="color-cyan"><em>highly dense information</em></span>.
-              - The value of a state is subjective to the player's perspective and can <span class="color-cyan"><em>shift dramatically even with minor changes</em></span>.
-              - The final result is <span class="color-cyan"><em>difficult to predict</em></span> from an early state, even for strong players.
+            - システム設計: データパイプラインの処理は、モデルの学習そのものよりも難しく、完全に最適化するには<span class="color-cyan"><em>高度なエンジニアリングスキルが求められる</em></span>.
+            - ボードゲームの特性:
+              - 取り得る盤面の数は<span class="color-cyan"><em>天文学的に膨大</em></span>になり得る. 例えば、囲碁ではおよそ $10^{170}$ とされる.
+              - 入力サイズは小さいが、情報は<span class="color-cyan"><em>非常に高密度</em></span>である.
+              - ある局面の価値はプレイヤーの視点に依存しており、<span class="color-cyan"><em>わずかな変化でも大きく変動し得る</em></span>.
+              - 序盤の局面から最終結果を<span class="color-cyan"><em>予測するのは難しく</em></span>、強いプレイヤーであっても容易ではない.
           </textarea>
         </section>
         <section data-markdown style="text-align: left;">
           <textarea data-template>
             ## 1. Overview
             ### 1.4. Components
-            <object data="slides/en/overview-components.drawio.svg" type="image/svg+xml" style="width: 100%;"></object>
+            <object data="slides/ja/overview-components.drawio.svg" type="image/svg+xml" style="width: 100%;"></object>
           </textarea>
         </section>
       </section>
@@ -134,19 +134,19 @@
         <section data-markdown style="text-align: left;">
           <textarea data-template>
             ## 2. MCTS (Monte Carlo Tree Search)
-            <object data="slides/en/overview-components-mcts_focus.drawio.svg" type="image/svg+xml" style="width: 100%;"></object>
+            <object data="slides/ja/overview-components-mcts_focus.drawio.svg" type="image/svg+xml" style="width: 100%;"></object>
           </textarea>
         </section>
         <section data-markdown style="text-align: left;">
           <textarea data-template>
             ## 2. MCTS (Monte Carlo Tree Search)
             ### 2.1. Key Features
-            - Requirements: A "model" (e.g., a neural network) that:
-              - Takes a game <span class="color-cyan"><em>state</em></span> as input data.
-              - Predicts output data including <span class="color-cyan"><em>prior probabilities (policy)</em></span> and a <span class="color-cyan"><em>state value</em></span>.
-            - Results: Improved <span class="color-cyan"><em>search probabilities</em></span>.
+            - 要件: 次の条件を満たす「モデル」（ニューラルネットワーク）:
+              - ゲームの <span class="color-cyan"><em>state</em></span> を入力として受け取る.
+              - <span class="color-cyan"><em>prior probabilities (policy)</em></span> と <span class="color-cyan"><em>state value</em></span> を含む出力を予測する.
+            - 結果: 改善された <span class="color-cyan"><em>search probabilities</em></span>.
 
-            <object data="slides/en/mcts-key_features.drawio.svg" type="image/svg+xml" style="width: 100%;"></object>
+            <object data="slides/ja/mcts-key_features.drawio.svg" type="image/svg+xml" style="width: 100%;"></object>
           </textarea>
         </section>
         <section data-markdown style="text-align: left;">
@@ -154,13 +154,13 @@
             ## 2. MCTS (Monte Carlo Tree Search)
             ### 2.2. Algorithm (1/2)
             #### Overview
-            - Construct a search tree:
-              - Each node represents a state.
-              - Each edge represents a legal move connecting a parent node to one of its child nodes.
-            - During tree traversal from the initial state to a terminal state:
-              - At <span class="color-cyan"><em>each move</em></span>, execute <span class="color-cyan"><em>multiple MCTS simulations</em></span> from the current root node.
-                - <span class="color-cyan"><em>Each simulation</em></span> includes two main phases: <span class="color-cyan"><em>selection</em></span> and <span class="color-cyan"><em>backup</em></span>.
-              - After the MCTS simulations finish, the next actual move is chosen by <span class="color-cyan"><em>sampling from the search probabilities</em></span> (calculated from <span class="color-cyan"><em>visit counts</em></span>), and the next node becomes the new root node.
+            - 探索木を構築する:
+              - 各 node は state を表す.
+              - 各 edge は、親 node とその子 node の一つを結ぶ合法手を表す.
+            - Initial state から terminal state まで木を探索する過程において:
+              - <span class="color-cyan"><em>各 move</em></span> ごとに、現在の root node から<span class="color-cyan"><em>複数回の MCTS simulation</em></span> を実行する.
+                - <span class="color-cyan"><em>各 simulation</em></span> は、主に2つのフェーズ: <span class="color-cyan"><em>選択</em></span>と<span class="color-cyan"><em>バックアップ</em></span>から構成される.
+              - MCTS simulation が終了した後、 次の実際の move は <span class="color-cyan"><em>visit counts</em></span> に基づいて計算された <span class="color-cyan"><em>search probabilities からサンプリング</em></span>によって選択され、次の node が新しい root node となる.
           </textarea>
         </section>
         <section data-markdown style="text-align: left;">
@@ -168,10 +168,10 @@
             ## 2. MCTS (Monte Carlo Tree Search)
             ### 2.2. Algorithm (2/2)
             <p style="font-size: initial;" class="color-yellow">IMPORTANT</p>
-            <p style="font-size: initial;"><span class="color-cyan"><em>Selecting an action during one MCTS simulation</em></span> relies on <span class="color-cyan"><em>PUCT scores</em></span> (as shown in this slide),</p>
-            <p style="font-size: initial;">whereas <span class="color-cyan"><em>choosing the next actual move</em></span> involves sampling from <span class="color-cyan"><em>the search probabilities</em></span> accumulated across <span class="color-cyan"><em>multiple MCTS simulations</em></span>.</p>
+            <p style="font-size: initial;"><span class="color-cyan"><em>1回の MCTS simulation 中における action の選択</em></span>は、（このスライドに示されているように） <span class="color-cyan"><em>PUCT scores</em></span> に基づいて行われる.</p>
+            <p style="font-size: initial;">一方で、<span class="color-cyan"><em>実際の次の move を選択する</em></span>際には、<span class="color-cyan"><em>複数回の MCTS simulation</em></span> を通じて蓄積された <span class="color-cyan"><em>search probabilities</em></span> に基づいてサンプリングが行われる.</p>
             <p>
-              <object data="slides/en/mcts-one_simulation.drawio.svg" type="image/svg+xml" style="width: 100%;"></object>
+              <object data="slides/ja/mcts-one_simulation.drawio.svg" type="image/svg+xml" style="width: 100%;"></object>
             </p>
             <p style="font-size: initial;">Please refer to the Appendix for further details.</p>
           </textarea>
@@ -181,11 +181,11 @@
             ## 2. MCTS (Monte Carlo Tree Search)
             ### 2.3. Example: Tic-tac-toe Game (1/2)
             #### MCTS Simulations
-            <p style="font-size: initial;">For simplicity, we use a dummy model that assigns <span class="color-cyan"><em>uniform prior probabilities</em></span> to all actions and <span class="color-cyan"><em>zero values</em></span> to all states (excluding terminal ones).</p>
-            <p style="font-size: initial;">Despite these imperfect predictions, the MCTS algorithm finds optimal solutions: Over more iterations, <span class="color-cyan"><em>nodes leading to victory are visited with increasing frequency</em></span>.</p>
+            <p style="font-size: initial;">すべての action に<span class="color-cyan"><em>一様な prior probabilities</em></span> を割り当て、（terminal state を除く）すべての state に対して <span class="color-cyan"><em>value をゼロ</em></span>とするダミーモデルを用いる.</p>
+            <p style="font-size: initial;">このような不完全な予測にもかかわらず、iteration 回数を重ねるにつれて、<span class="color-cyan"><em>勝利につながる node はますます高い頻度で訪問されるようになる</em></span>.</p>
             <p style="font-size: initial;" class="color-yellow">IMPORTANT</p>
-            <p style="font-size: initial;">While actions are selected consecutively during simulation, these are only "investigations". Actual moves occur only after all simulations finish.</p>
-            <iframe data-src="slides/en/mcts-example-multiple_simulations.html" data-preload class="wide-content" style="max-width: 100%; width: 100%; height: 100vh;"></iframe>
+            <p style="font-size: initial;">simulation 中には action が連続して選択されるが、これらは「調査」にすぎなく、実際の move は、すべての simulation が終了した後にのみ実行される.</p>
+            <iframe data-src="slides/ja/mcts-example-multiple_simulations.html" data-preload class="wide-content" style="max-width: 100%; width: 100%; height: 100vh;"></iframe>
           </textarea>
         </section>
         <section data-markdown style="text-align: left;">
@@ -193,10 +193,10 @@
             ## 2. MCTS (Monte Carlo Tree Search)
             ### 2.3. Example: Tic-tac-toe Game (2/2)
             #### Choosing Next Move
-            <p style="font-size: initial;">After executing <span class="color-cyan"><em>multiple MCTS simulations</em></span>, <span class="color-cyan"><em>visit counts</em></span> are used to calculate <span class="color-cyan"><em>the search probabilities</em></span>, which are stronger than <span class="color-cyan"><em>the prior probabilities</em></span> (predicted by the model) in terms of choosing a good next move.</p>
-            <p style="font-size: initial;">The tree search plays the role of both players: at each node, it <span class="color-cyan"><em>changes perspective</em></span> to seek the best strategy for the current player.</p>
+            <p style="font-size: initial;"><span class="color-cyan"><em>複数回の MCTS simulation</em></span> を実行した後、<span class="color-cyan"><em>visit count</em></span> は <span class="color-cyan"><em>search probabilities</em></span> の計算に用いられ、良い次の move を選択するという点において、（モデルによって予測された）<span class="color-cyan"><em>prior probabilities</em></span> よりも強力である.</p>
+            <p style="font-size: initial;">木探索は両プレイヤーの<span class="color-cyan"><em>役割を担い</em></span>、各 node において視点を切り替え、その時点のプレイヤーにとって最善の戦略を追求する.</p>
             <p>
-              <object data="slides/en/mcts-example-choosing_next_move.drawio.svg" type="image/svg+xml" style="width: 100%;"></object>
+              <object data="slides/ja/mcts-example-choosing_next_move.drawio.svg" type="image/svg+xml" style="width: 100%;"></object>
             </p>
             <p style="font-size: initial;">In this presentation, I used a temperature of 1 to calculate the search probabilities from visit counts.</p>
           </textarea>
@@ -205,16 +205,16 @@
           <textarea data-template>
             ## 2. MCTS (Monte Carlo Tree Search)
             ### 2.4. Connection with Model Training
-            MCTS simulations are capable of choosing a good move despite imperfect predictions from the model for a given state.<br/>
-            So, <span class="color-cyan"><em>why do we need to train a model</em></span>? Are MCTS simulations not enough?<br/>
+            MCTS simulation は、ある state に対してモデルの予測が不完全であっても、良い move を選択することができる.<br/>
+            では、<span class="color-cyan"><em>なぜモデルを学習する必要があるのだろうか</em></span>? MCTS simulation だけでは不十分なのだろうか.<br/>
             <br/>
-            The reason is that <span class="color-cyan"><em>MCTS simulations are time-consuming</em></span> and can be infeasible for complex board games.<br/>
-            Training a model is equivalent to <span class="color-cyan"><em>increasing the total number of simulations</em></span>, thereby <span class="color-cyan"><em>further improving the strength of the MCTS algorithm</em></span>.
+            その理由は、<span class="color-cyan"><em>MCTS simulation には多くの時間がかかり</em></span>、複雑なボードゲームでは実行が現実的でない場合があるからである.<br/>
+            モデルを学習することは、<span class="color-cyan"><em>simulation の総数を増やすこと</em></span>に相当し、それによって <span class="color-cyan"><em>MCTS の強さをさらに向上させる</em></span>ことになる.<br/>
             <div style="font-size: 0.6em;">
               <ul>
-                <li>Iteration 0: The model is naive; we must execute at least 100 simulations by default to find good moves.</li>
-                <li>Iteration 1: The model is slightly better, and with the default 100 simulations, it is equivalent to executing a total of 200 simulations, allowing it to choose better moves.</li>
-                <li>Iteration 2: The model is much better; it is now equivalent to executing 300 simulations and helps us achieve even better performance.</li>
+                <li>Iteration 0: モデルはまだ未熟であり、良い move を見つけるためには、デフォルトで少なくとも100回の simulation を実行する必要がある.</li>
+                <li>Iteration 1: モデルはやや改善され、デフォルトの100回の simulation で、合計200回の simulation を実行したのと同等の効果があり、より良い move を選択できるようになる.</li>
+                <li>Iteration 2: モデルは大幅に改善され、現在では300回の simulation を実行したのと同等になり、さらに高いパフォーマンスを達成できる.</li>
                 <li>...</li>
               </ul>
             </div>
@@ -226,19 +226,19 @@
         <section data-markdown style="text-align: left;">
           <textarea data-template>
             ## 3. Data Collection
-            <object data="slides/en/overview-components-data_collection_focus.drawio.svg" type="image/svg+xml" style="width: 100%;"></object>
+            <object data="slides/ja/overview-components-data_collection_focus.drawio.svg" type="image/svg+xml" style="width: 100%;"></object>
           </textarea>
         </section>
         <section data-markdown style="text-align: left;">
           <textarea data-template>
             ## 3. Data Collection
             ### 3.1. Overview
-            - Data is generated during self-play using the best model from the previous iteration.
-            - Each data point includes:
-              - Input data: Represents <span class="color-cyan"><em>the state</em></span> for an individual move.
-              - Output data: Includes two parts
-                - <span class="color-cyan"><em>Search probabilities</em></span>: Calculated using visit counts from MCTS simulations.
-                - <span class="color-cyan"><em>Value</em></span>: The reward received after the game is finished.
+            - データは、前回の iteration で得られた最良のモデルを用いた self-play によって生成されます.
+            - 各データポイントには以下が含まれます:
+              - Input data: 各 move における <span class="color-cyan"><em>state</em></span> を表す.
+              - Output data: 以下の2つの要素を含む
+                - <span class="color-cyan"><em>Search probabilities</em></span>: MCTS simulation における訪問回数に基づいて計算される.
+                - <span class="color-cyan"><em>Value</em></span>: ゲーム終了後に得られる reward を表す.
           </textarea>
         </section>
         <section data-markdown style="text-align: left;">
@@ -246,7 +246,7 @@
             ## 3. Data Collection
             ### 3.2. Input Data
             <p>
-              <object data="slides/en/data_collection-input_data.drawio.svg" type="image/svg+xml" style="width: 100%;"></object>
+              <object data="slides/ja/data_collection-input_data.drawio.svg" type="image/svg+xml" style="width: 100%;"></object>
             </p>
           </textarea>
         </section>
@@ -255,7 +255,7 @@
             ## 3. Data Collection
             ### 3.3. Output Data
             <p>
-              <object data="slides/en/data_collection-output_data.drawio.svg" type="image/svg+xml" style="width: 100%;"></object>
+              <object data="slides/ja/data_collection-output_data.drawio.svg" type="image/svg+xml" style="width: 100%;"></object>
             </p>
             <p style="font-size: initial;">In this presentation, I used a temperature of 1 to calculate the search probabilities from visit counts.</p>
             <p style="font-size: initial;">Probabilities for illegal actions should be set to 0, but for simplicity, I am ignoring them.</p>
@@ -266,7 +266,7 @@
             ## 3. Data Collection
             ### 3.4. Replay Buffer
             <p>
-              <object data="slides/en/data_collection-replay_buffer.drawio.svg" type="image/svg+xml" style="width: 100%;"></object>
+              <object data="slides/ja/data_collection-replay_buffer.drawio.svg" type="image/svg+xml" style="width: 100%;"></object>
             </p>
           </textarea>
         </section>
@@ -276,21 +276,21 @@
         <section data-markdown style="text-align: left;">
           <textarea data-template>
             ## 4. Model Training
-            <object data="slides/en/overview-components-model_training_focus.drawio.svg" type="image/svg+xml" style="width: 100%;"></object>
+            <object data="slides/ja/overview-components-model_training_focus.drawio.svg" type="image/svg+xml" style="width: 100%;"></object>
           </textarea>
         </section>
         <section data-markdown style="text-align: left;">
           <textarea data-template>
             ## 4. Model Training
             ### 4.1. Training Flow
-            <object data="slides/en/model_training-training_flow.drawio.svg" type="image/svg+xml" style="width: 100%;"></object>
+            <object data="slides/ja/model_training-training_flow.drawio.svg" type="image/svg+xml" style="width: 100%;"></object>
           </textarea>
         </section>
         <section data-markdown style="text-align: left;">
           <textarea data-template>
             ## 4. Model Training
             ### 4.2. Model Architecture
-            <object data="slides/en/model_training-model_architecture.drawio.svg" type="image/svg+xml" style="width: 100%;"></object>
+            <object data="slides/ja/model_training-model_architecture.drawio.svg" type="image/svg+xml" style="width: 100%;"></object>
             <p style="font-size: initial;">This is the architecture of my model. The architecture used by AlphaGo and AlphaZero is much larger and more complicated.</p>
           </textarea>
         </section>
@@ -302,14 +302,14 @@
             ## 5. Minimal Implementation
             ### 5.1. Source Code
             [https://github.com/vjai-community/minimal-alpha-zero](https://github.com/vjai-community/minimal-alpha-zero)
-            - Implemented <span class="color-cyan"><em>the AlphaZero algorithm from scratch</em></span> (using Flax for model training).
-            - Trained for an [m,n,k-game](https://en.wikipedia.org/wiki/M,n,k-game) on <span class="color-cyan"><em>a small board</em></span> (m=6, n=5, k=4).
-            - The model is <span class="color-cyan"><em>lightweight</em></span> and does not require a GPU.
-            - Training completes within several hours (on a MacBook or Ryzen with multiple cores).
-            - Contributions welcome! 🤗🤗
+            - <span class="color-cyan"><em>AlphaZero アルゴリズムをスクラッチから実装</em></span> (モデル学習には Flax を使用).
+            - <span class="color-cyan"><em>小さな盤面</em></span>の [m,n,k-game](https://en.wikipedia.org/wiki/M,n,k-game) (m=6, n=5, k=4) で学習を実施.
+            - モデルは<span class="color-cyan"><em>軽量</em></span>で、GPUを必要としない.
+            - 学習は数時間以内に完了（マルチコアの MacBook や Ryzen 環境で動作）.
+            - コントリビューション大歓迎! 🤗🤗
 
             <p style="display: flex; justify-content: center;">
-              <object data="slides/en/overview-mnk_game.drawio.svg" type="image/svg+xml" style="height: 25vh;"></object>
+              <object data="slides/ja/overview-mnk_game.drawio.svg" type="image/svg+xml" style="height: 25vh;"></object>
             </p>
           </textarea>
         </section>
@@ -318,8 +318,8 @@
             ## 5. Minimal Implementation
             ### 5.2. Interesting Insights (1/3)
             #### Empty Board
-            The model learned that, starting from an empty board, the first player should <span class="color-cyan"><em>focus on the center of the board</em></span>.
-            <object data="slides/en/interesting_insights-empty_board.drawio.svg" type="image/svg+xml" style="width: 100%;"></object>
+            モデルは、空の盤面から開始する場合、<span class="color-cyan"><em>先手は盤面の中央に集中すべき</em></span>であることを学習した.
+            <object data="slides/ja/interesting_insights-empty_board.drawio.svg" type="image/svg+xml" style="width: 100%;"></object>
             <p style="font-size: initial;">I never taught the model this knowledge; it figured it out on its own!</p>
           </textarea>
         </section>
@@ -328,8 +328,8 @@
             ## 5. Minimal Implementation
             ### 5.2. Interesting Insights (2/3)
             #### Threats
-            Even after training, the model is still not smart enough to recognize all threats; <span class="color-cyan"><em>the key to AlphaZero's strength lies in MCTS</em></span>.
-            <object data="slides/en/interesting_insights-threats.drawio.svg" type="image/svg+xml" style="width: 100%;"></object>
+            学習後であっても、モデルは依然としてすべての脅威を認識できるほど賢くはなくて、<span class="color-cyan"><em>AlphaZero の強さの鍵は MCTS にある</em></span>.
+            <object data="slides/ja/interesting_insights-threats.drawio.svg" type="image/svg+xml" style="width: 100%;"></object>
           </textarea>
         </section>
         <section data-markdown style="text-align: left;">
@@ -337,10 +337,10 @@
             ## 5. Minimal Implementation
             ### 5.2. Interesting Insights (3/3)
             #### Others
-            - <span class="color-cyan"><em>Understanding and processing the data are far more important</em></span> than designing the model.
-            - <span class="color-cyan"><em>Data collection is more time-consuming</em></span> than model training.<br/>
-            - Generally speaking, <span class="color-cyan"><em>implementing an effective reinforcement learning system is a big challenge</em></span>.<br/>
-            You must address every stage of the process, from the data pipeline and resource constraints to model architecture optimization and, in some cases, hardware integration.
+            - <span class="color-cyan"><em>データの理解と処理は、モデル設計よりもはるかに重要</em></span>.
+            - <span class="color-cyan"><em>データ収集は、モデルの学習よりも時間がかかる</em></span>.<br/>
+            - 一般的に言って、<span class="color-cyan"><em>効果的な強化学習システムを実装することは大きな挑戦</em></span>.<br/>
+            データパイプラインやリソースの制約から、モデルアーキテクチャの最適化、場合によってはハードウェア統合に至るまで、プロセスのあらゆる段階に対処しなければならない.
           </textarea>
         </section>
       </section>
@@ -401,26 +401,7 @@
         <section data-markdown style="text-align: left;">
           <textarea data-template>
             ## Appendix
-            ### MCTS Algorithm: Selection Phase
-            <p class="wide-content">
-              <object data="slides/en/mcts-selection_phase.drawio.svg" type="image/svg+xml" style="width: 100%;"></object>
-            </p>
-          </textarea>
-        </section>
-        <section data-markdown style="text-align: left;">
-          <textarea data-template>
-            ## Appendix
-            ### MCTS Algorithm: Backup Phase
-            <p class="wide-content">
-              <object data="slides/en/mcts-backup_phase.drawio.svg" type="image/svg+xml" style="width: 100%;"></object>
-            </p>
-          </textarea>
-        </section>
-        <section data-markdown style="text-align: left;">
-          <textarea data-template>
-            ## Appendix
-            ### Other Considerations
-            - The square root appears in $\frac{\sqrt{\underset{b}{\sum}N(s,b)}}{1+N(s,a)}$ may serve several purposes, but one of them is to ensure that the entire PUCT score eventually converges to only the exploitation term $Q(s,a)$ as $n\rightarrow\infty$.
+            Please check [the English version](./index.html)
           </textarea>
         </section>
       </section>
