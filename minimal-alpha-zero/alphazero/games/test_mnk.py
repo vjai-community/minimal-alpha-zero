@@ -7,8 +7,8 @@ from flax import nnx
 from ..core.model import ModelConfig
 from ..core.generator import PlayConfig, EvaluationConfig
 from .mnk import (
-    StoneColor,
-    Stone,
+    MnkPieceColor,
+    MnkPiece,
     MnkAction,
     MnkState,
     MnkGame,
@@ -21,7 +21,7 @@ class TestMnk:
     """ """
 
     @pytest.mark.parametrize("times", range(500))
-    def test_game_simulate(self, times):
+    def test_game_transition(self, times):
         """ """
         # Generate a state.
         m = random.randint(8, 16)
@@ -30,24 +30,24 @@ class TestMnk:
         mnk_game = MnkGame(m, n, k)
         red_count = 0
         green_count = 0
-        board: list[list[Optional[Stone]]] = []
+        board: list[list[Optional[MnkPiece]]] = []
         actions: list[MnkAction] = []
         for y in range(n):
-            row: list[Optional[Stone]] = []
+            row: list[Optional[MnkPiece]] = []
             for x in range(m):
-                color = random.choice([StoneColor.RED, StoneColor.GREEN, None])
-                row.append(Stone(color) if color is not None else None)
+                color = random.choice([MnkPieceColor.RED, MnkPieceColor.GREEN, None])
+                row.append(MnkPiece(color) if color is not None else None)
                 if color is not None:
                     actions.append(MnkAction(x, y))
-                    if color == StoneColor.RED:
+                    if color == MnkPieceColor.RED:
                         red_count += 1
                     else:
                         green_count += 1
             board.append(row)
         state = MnkState(board, red_count + green_count, random.choice(actions))
-        # Simulate a new state.
+        # Transition to a new state.
         new_action = MnkAction(random.randint(0, m - 1), random.randint(0, n - 1))
-        new_state = mnk_game.simulate(state, new_action)
+        new_state = mnk_game.transition(state, new_action)
         for y in range(n):
             for x in range(m):
                 if x != new_action.x or y != new_action.y or state.board[y][x] is not None:

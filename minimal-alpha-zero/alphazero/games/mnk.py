@@ -25,7 +25,7 @@ EVALUATION_BEST_CANDIDATE_DIR_NAME = "evaluation-best-candidate"
 logger = logging.getLogger(__name__)
 
 
-class StoneColor(Enum):
+class MnkPieceColor(Enum):
     """ """
 
     RED = ("x", "X")
@@ -38,20 +38,20 @@ class StoneColor(Enum):
         self._mark = mark
         self._big_mark = big_mark
 
-    def get_mark(self, is_last_stone: bool = False) -> str:
-        return self._mark if not is_last_stone else self._big_mark
+    def get_mark(self, is_last_piece: bool = False) -> str:
+        return self._mark if not is_last_piece else self._big_mark
 
 
-class Stone:
+class MnkPiece:
     """ """
 
-    color: StoneColor
+    color: MnkPieceColor
 
-    def __init__(self, color: StoneColor):
+    def __init__(self, color: MnkPieceColor):
         self.color = color
 
-    def __eq__(self, value: "Stone"):
-        if not isinstance(value, Stone):
+    def __eq__(self, value: "MnkPiece"):
+        if not isinstance(value, MnkPiece):
             return False
         return self.color == value.color
 
@@ -91,28 +91,28 @@ class MnkState(State):
 
     SHOULD_USE_FIXED_COLOR_REPRESENTATION = False
 
-    board: list[list[Optional[Stone]]]
+    board: list[list[Optional[MnkPiece]]]
 
     # Used to simplify checking whether the state is terminal.
-    stone_count: int
+    piece_count: int
     last_action: Optional[MnkAction]
 
     def __init__(
         self,
-        board: list[list[Optional[Stone]]],
-        stone_count: int,
+        board: list[list[Optional[MnkPiece]]],
+        piece_count: int,
         last_action: Optional[MnkAction],
     ):
         if last_action is not None and board[last_action.y][last_action.x] is None:
             raise ValueError("Invalid last action: its position on the board is empty.")
         self.board = board
-        self.stone_count = stone_count
+        self.piece_count = piece_count
         self.last_action = last_action
 
     def __eq__(self, value: "MnkState"):
         return (
             self.board == value.board
-            and self.stone_count == value.stone_count
+            and self.piece_count == value.piece_count
             and self.last_action == value.last_action
         )
 
@@ -125,7 +125,9 @@ class MnkState(State):
             # The reason is that Red always moves first, which means the current player's color for a given state is fixed,
             # therefore, we will theoretically never encounter the opposite perspective (although I might be wrong).
             board_data = [
-                [(-1.0 if s.color == StoneColor.RED else 1.0) if s is not None else 0.0 for s in r]  # Fixed stone color
+                [
+                    (-1.0 if s.color == MnkPieceColor.RED else 1.0) if s is not None else 0.0 for s in r
+                ]  # Fixed piece color
                 for r in self.board
             ]
         else:
@@ -135,29 +137,29 @@ class MnkState(State):
             # We need to identify the cause.
             color = self.get_current_player_color()
             board_data = [
-                # The current player's stones are represented as `1`, and the opponent's as `-1`.
+                # The current player's pieces are represented as `1`, and the opponent's as `-1`.
                 [(1.0 if s.color == color else -1.0) if s is not None else 0.0 for s in r]
                 for r in self.board
             ]
         return MnkInputData(board_data)
 
-    def get_current_player_color(self) -> StoneColor:
+    def get_current_player_color(self) -> MnkPieceColor:
         """ """
         # Determine whether it is Red's turn.
         is_in_red_turn = (
             self.last_action is None  # Red always moves first
-            or self.board[self.last_action.y][self.last_action.x].color == StoneColor.GREEN
+            or self.board[self.last_action.y][self.last_action.x].color == MnkPieceColor.GREEN
         )
-        return StoneColor.RED if is_in_red_turn else StoneColor.GREEN
+        return MnkPieceColor.RED if is_in_red_turn else MnkPieceColor.GREEN
 
     def __str__(self):
         board_str = ""
         for y, row in enumerate(reversed(self.board)):  # Print rows from top to bottom
-            for x, stone in enumerate(row):
-                is_last_stone = False
+            for x, piece in enumerate(row):
+                is_last_piece = False
                 if self.last_action is not None:
-                    is_last_stone = x == self.last_action.x and y == len(self.board) - 1 - self.last_action.y
-                board_str += "." if stone is None else stone.color.get_mark(is_last_stone=is_last_stone)
+                    is_last_piece = x == self.last_action.x and y == len(self.board) - 1 - self.last_action.y
+                board_str += "." if piece is None else piece.color.get_mark(is_last_piece=is_last_piece)
                 board_str += " "
             if y < len(self.board) - 1:
                 board_str += "\n"
@@ -177,8 +179,8 @@ class MnkGame(Game):
     #           m
     m: int  # Number of columns
     n: int  # Number of rows
-    k: int  # Number of stones to connect
-    initial_stones_nums: Optional[list[int]]
+    k: int  # Number of pieces to connect
+    initial_pieces_nums: Optional[list[int]]
 
     # With some choices of m, n, k, it is probably too easy for the first player to win.
     # Hence, we give the winner a larger reward if the game ends quickly and a smaller reward if it lasts longer,
@@ -190,15 +192,15 @@ class MnkGame(Game):
         m: int,
         n: int,
         k: int,
-        initial_stones_nums: Optional[list[int]] = None,
+        initial_pieces_nums: Optional[list[int]] = None,
         should_prefer_fast_win: bool = False,
     ):
         self.m = m
         self.n = n
         self.k = k
-        self.initial_stones_nums = (
-            [n for n in initial_stones_nums if n >= 0 and n < self.m * self.n and n % 2 == 0]  # Keep only even numbers
-            if initial_stones_nums is not None
+        self.initial_pieces_nums = (
+            [n for n in initial_pieces_nums if n >= 0 and n < self.m * self.n and n % 2 == 0]  # Keep only even numbers
+            if initial_pieces_nums is not None
             else None
         )
         self.should_prefer_fast_win = should_prefer_fast_win
@@ -206,12 +208,12 @@ class MnkGame(Game):
     def begin(self) -> MnkState:
         """ """
         state = MnkState([[None for _ in range(self.m)] for _ in range(self.n)], 0, None)
-        if self.initial_stones_nums is None or len(self.initial_stones_nums) == 0:
+        if self.initial_pieces_nums is None or len(self.initial_pieces_nums) == 0:
             return state
         positions = [(x, y) for y in range(self.n) for x in range(self.m)]
-        initial_stones_num = random.choice(self.initial_stones_nums)
-        for x, y in random.sample(positions, initial_stones_num):
-            state = self.simulate(state, MnkAction(x, y))
+        initial_pieces_num = random.choice(self.initial_pieces_nums)
+        for x, y in random.sample(positions, initial_pieces_num):
+            state = self.transition(state, MnkAction(x, y))
         return state
 
     def list_all_actions(self) -> list[MnkAction]:
@@ -222,69 +224,69 @@ class MnkGame(Game):
         """ """
         return [MnkAction(x, y) for y, r in enumerate(state.board) for x, s in enumerate(r) if s is None]
 
-    def simulate(self, state: MnkState, action: MnkAction) -> MnkState:
+    def transition(self, state: MnkState, action: MnkAction) -> MnkState:
         """
         Only return a new state without storing it in history.
         """
-        new_board: list[list[Optional[Stone]]] = []
+        new_board: list[list[Optional[MnkPiece]]] = []
         for cur_row in state.board:
-            new_row: list[Optional[Stone]] = []
-            for stone in cur_row:
-                new_row.append(Stone(stone.color) if stone is not None else None)
+            new_row: list[Optional[MnkPiece]] = []
+            for piece in cur_row:
+                new_row.append(MnkPiece(piece.color) if piece is not None else None)
             new_board.append(new_row)
-        stone = Stone(state.get_current_player_color())  # Next stone
-        stone_count = state.stone_count
+        piece = MnkPiece(state.get_current_player_color())  # Next piece
+        piece_count = state.piece_count
         if new_board[action.y][action.x] is None:
-            new_board[action.y][action.x] = stone
-            stone_count += 1
+            new_board[action.y][action.x] = piece
+            piece_count += 1
         else:
             # An illegal action. This should never happen.
             pass
-        new_state = MnkState(new_board, stone_count, action)
+        new_state = MnkState(new_board, piece_count, action)
         return new_state
 
     def receive_reward_if_terminal(self, state: MnkState) -> Optional[float]:
         """ """
         reward = 1.0  # Reward when there is a winner
         if self.should_prefer_fast_win:
-            # Adjust the reward based on the number of stones.
-            # max reward (1) = `k * 2` stones (fastest win), min reward (0) = `m * n` stones (board full).
-            reward = min((state.stone_count - self.m * self.n) / (self.k * 2 - self.m * self.n), 1.0)
+            # Adjust the reward based on the number of pieces.
+            # max reward (1) = `k * 2` pieces (fastest win), min reward (0) = `m * n` pieces (board full).
+            reward = min((state.piece_count - self.m * self.n) / (self.k * 2 - self.m * self.n), 1.0)
         # The board is empty.
         if state.last_action is None:
             return None  # Not terminal
         last_x, last_y = state.last_action.x, state.last_action.y
         last_color = state.board[last_y][last_x].color
-        # Check rows containing the last action. Only consider stones of the same color as the last move.
+        # Check rows containing the last action. Only consider pieces of the same color as the last move.
         m, n, k = self.m, self.n, self.k
         ## The horizontal row.
         row = [state.board[last_y][x] for x in range(m)]
-        if self._check_consecutive_stones(row, last_color, k):
+        if self._check_consecutive_pieces(row, last_color, k):
             return reward
         ## The vertical row.
         row = [state.board[y][last_x] for y in range(n)]
-        if self._check_consecutive_stones(row, last_color, k):
+        if self._check_consecutive_pieces(row, last_color, k):
             return reward
         ## The upward diagonal row.
         left_x, left_y = (last_x - last_y, 0) if last_x >= last_y else (0, last_y - last_x)
         row = [state.board[left_y + i][left_x + i] for i in range(min(n - left_y, m - left_x))]
-        if self._check_consecutive_stones(row, last_color, k):
+        if self._check_consecutive_pieces(row, last_color, k):
             return reward
         ## The downward diagonal row.
         left_x, left_y = (last_x - (n - 1 - last_y), n - 1) if last_x >= n - 1 - last_y else (0, last_y + last_x)
         row = [state.board[left_y - i][left_x + i] for i in range(min(left_y + 1, m - left_x))]
-        if self._check_consecutive_stones(row, last_color, k):
+        if self._check_consecutive_pieces(row, last_color, k):
             return reward
         # Declare a draw if the board is full. Otherwise, it is not in a terminal state.
-        is_full = state.stone_count == m * n
+        is_full = state.piece_count == m * n
         return 0.0 if is_full else None
 
     @staticmethod
-    def _check_consecutive_stones(row: list[Optional[Stone]], color: StoneColor, k: int) -> bool:
+    def _check_consecutive_pieces(row: list[Optional[MnkPiece]], color: MnkPieceColor, k: int) -> bool:
         """ """
         count = 0
-        for stone in row:
-            if stone is not None and stone.color == color:
+        for piece in row:
+            if piece is not None and piece.color == color:
                 count += 1
                 if count == k:
                     return True
@@ -534,7 +536,8 @@ def log_competition(competition_file_path: os.PathLike, play_record: PlayRecord)
             is_in_red_turn = j % 2 == 0  # Red always moves first. Ref: `MnkState.get_current_player_color` method.
             competition_file.write(f"{state}\n")
             competition_file.write(
-                f"Model: {model_name} " + f"({(StoneColor.RED if is_in_red_turn else StoneColor.GREEN).get_mark()})\n"
+                f"Model: {model_name} "
+                + f"({(MnkPieceColor.RED if is_in_red_turn else MnkPieceColor.GREEN).get_mark()})\n"
             )
             competition_file.write(f"Prior probabilities (%):\n{format_board(state, prior_probs)}\n")
             competition_file.write(f"Search probabilities (%):\n{format_board(state, search_probs)}\n")
@@ -555,14 +558,14 @@ def format_board(state: MnkState, flattened_probs: list[float]) -> str:
     for y, (board_row, prob_row) in enumerate(
         zip(reversed(state.board), reversed(probs))
     ):  # Print rows from top to bottom
-        for x, (stone, prob) in enumerate(zip(board_row, prob_row)):
-            is_last_stone = False
+        for x, (piece, prob) in enumerate(zip(board_row, prob_row)):
+            is_last_piece = False
             if state.last_action is not None:
-                is_last_stone = x == state.last_action.x and y == len(state.board) - 1 - state.last_action.y
+                is_last_piece = x == state.last_action.x and y == len(state.board) - 1 - state.last_action.y
             board_str += (
                 f"{int(prob * 100):3}"  # Percentage
-                if stone is None
-                else f"  {stone.color.get_mark(is_last_stone=is_last_stone)}"
+                if piece is None
+                else f"  {piece.color.get_mark(is_last_piece=is_last_piece)}"
             )
             if x < m - 1:
                 board_str += " "
@@ -581,38 +584,38 @@ def augment_data(data: tuple[MnkState, list[float], float]) -> dict[str, tuple[M
 
     def _flip_state_vertically(state: MnkState) -> MnkState:
         """ """
-        new_board: list[list[Optional[Stone]]] = []
+        new_board: list[list[Optional[MnkPiece]]] = []
         for row in reversed(state.board):
-            new_row = [Stone(s.color) if s is not None else None for s in row]
+            new_row = [MnkPiece(s.color) if s is not None else None for s in row]
             new_board.append(new_row)
         new_last_action = None
         if state.last_action is not None:
             new_last_action = MnkAction(state.last_action.x, n - 1 - state.last_action.y)
-        new_state = MnkState(new_board, state.stone_count, new_last_action)
+        new_state = MnkState(new_board, state.piece_count, new_last_action)
         return new_state
 
     def _flip_state_horizontally(state: MnkState) -> list[list[float]]:
         """ """
-        new_board: list[list[Optional[Stone]]] = []
+        new_board: list[list[Optional[MnkPiece]]] = []
         for row in state.board:
-            new_row = [Stone(s.color) if s is not None else None for s in reversed(row)]
+            new_row = [MnkPiece(s.color) if s is not None else None for s in reversed(row)]
             new_board.append(new_row)
         new_last_action = None
         if state.last_action is not None:
             new_last_action = MnkAction(m - 1 - state.last_action.x, state.last_action.y)
-        new_state = MnkState(new_board, state.stone_count, new_last_action)
+        new_state = MnkState(new_board, state.piece_count, new_last_action)
         return new_state
 
     def _flip_state_centrally(state: MnkState) -> list[list[float]]:
         """ """
-        new_board: list[list[Optional[Stone]]] = []
+        new_board: list[list[Optional[MnkPiece]]] = []
         for row in reversed(state.board):
-            new_row = [Stone(s.color) if s is not None else None for s in reversed(row)]
+            new_row = [MnkPiece(s.color) if s is not None else None for s in reversed(row)]
             new_board.append(new_row)
         new_last_action = None
         if state.last_action is not None:
             new_last_action = MnkAction(m - 1 - state.last_action.x, n - 1 - state.last_action.y)
-        new_state = MnkState(new_board, state.stone_count, new_last_action)
+        new_state = MnkState(new_board, state.piece_count, new_last_action)
         return new_state
 
     # `_flip_probs_*` functions use the same layout as `MnkGame.list_all_actions` method to ensure the same action order.

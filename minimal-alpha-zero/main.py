@@ -25,7 +25,7 @@ from alphazero.core.generator import (
     execute_mcts_fresh,
 )
 from alphazero.games.mnk import (
-    StoneColor,
+    MnkPieceColor,
     MnkAction,
     MnkState,
     MnkGame,
@@ -236,10 +236,10 @@ def _play(game_shape: tuple[int, int, int], checkpoint_dir: Optional[str]):
     # Play a game.
     def _make_color(board_str: str) -> str:
         """ """
-        red = StoneColor.RED.get_mark(is_last_stone=False)
-        big_red = StoneColor.RED.get_mark(is_last_stone=True)
-        green = StoneColor.GREEN.get_mark(is_last_stone=False)
-        big_green = StoneColor.GREEN.get_mark(is_last_stone=True)
+        red = MnkPieceColor.RED.get_mark(is_last_piece=False)
+        big_red = MnkPieceColor.RED.get_mark(is_last_piece=True)
+        green = MnkPieceColor.GREEN.get_mark(is_last_piece=False)
+        big_green = MnkPieceColor.GREEN.get_mark(is_last_piece=True)
         board_str = board_str.replace(red, f"\033[0;31m{red}\033[0m")
         board_str = board_str.replace(big_red, f"\033[1;31m{big_red}\033[0m")
         board_str = board_str.replace(green, f"\033[0;32m{green}\033[0m")
@@ -284,10 +284,10 @@ def _play(game_shape: tuple[int, int, int], checkpoint_dir: Optional[str]):
     reward: Optional[float] = None
     while True:
         current_color = (
-            StoneColor.RED
+            MnkPieceColor.RED
             if state.last_action is None
-            or state.board[state.last_action.y][state.last_action.x].color == StoneColor.GREEN
-            else StoneColor.GREEN
+            or state.board[state.last_action.y][state.last_action.x].color == MnkPieceColor.GREEN
+            else MnkPieceColor.GREEN
         )
         print("==================================================")
         print(_make_color(str(state)))
@@ -330,7 +330,7 @@ def _play(game_shape: tuple[int, int, int], checkpoint_dir: Optional[str]):
             scaled_all_probs_sum = sum(scaled_all_probs)
             all_search_probs = [p / scaled_all_probs_sum for p in scaled_all_probs]
             action = random.choices(all_actions, weights=all_search_probs)[0]  # Next action
-        state = mnk_game.simulate(state, action)
+        state = mnk_game.transition(state, action)
         reward = mnk_game.receive_reward_if_terminal(state)
         if reward is not None:
             break

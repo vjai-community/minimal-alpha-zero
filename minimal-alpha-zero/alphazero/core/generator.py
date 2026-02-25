@@ -469,7 +469,7 @@ def _expand(node: Node, game: Game, model: Model):
     legal_prior_probs = {a: p for a, p in prior_probs.items() if a in legal_actions}
     # Create new edges that include prior probabilities only for legal actions.
     for action in legal_actions:
-        state = game.simulate(node.state, action)
+        state = game.transition(node.state, action)
         node.children[action] = Edge(Node(state), legal_prior_probs[action])
     node.value = value
 

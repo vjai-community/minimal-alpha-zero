@@ -71,9 +71,9 @@ class Game(ABC):
         """
 
     @abstractmethod
-    def simulate(self, state: State, action: Action) -> State:
+    def transition(self, state: State, action: Action) -> State:
         """
-        Simulate the move of an action from a given state to a new state without actually playing the move.
+        Transition from a given state to a new state by taking an action.
         """
 
     @abstractmethod
