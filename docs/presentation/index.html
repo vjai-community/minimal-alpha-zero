@@ -60,6 +60,11 @@
         <textarea data-template>
           # Minimal AlphaZero
           Tokyo - Japan, 2026
+          <p style="margin-top: 10vh;">
+            Sharing my journey of implementing a minimal version of<br/>
+            the AlphaZero algorithm for a small board game<br/>
+            <em class="color-gray">"Anything I can do, you can do better"</em>
+          </p>
         </textarea>
       </section>
 
@@ -80,19 +85,20 @@
           <textarea data-template>
             ## 1. Overview
             ### 1.1. Introduction
-            - AlphaGo: Defeated human grandmasters at a professional level.
-            - AlphaGo Zero:
+            - [AlphaGo](https://research.google/blog/alphago-mastering-the-ancient-game-of-go-with-machine-learning/): Defeated human grandmasters at a professional level.
+            - [AlphaGo Zero](https://deepmind.google/blog/alphago-zero-starting-from-scratch/):
               - Defeated its own predecessor.
               - <span class="color-cyan"><em>Learned without human knowledge</em></span>.
-            - AlphaZero:
+            - [AlphaZero](https://deepmind.google/blog/alphazero-shedding-new-light-on-chess-shogi-and-go/) (main topic of this presentation):
               - Defeated Stockfish, the gold standard for Chess engines.
               - <span class="color-cyan"><em>General purpose</em></span>. Same algorithm plays Chess, Shogi, and Go.
             <div>
-              <img style="width: 320px;"
+              <img style="height: 128px;"
                 src="https://images.liverpoolmuseums.org.uk/styles/dynamic_medium/public/2021-02/AlphaGo%20vs%20Lee%20Sodol%20%C2%A9AlphaGo%20Movie.jpg"/>
-              <img style="width: 320px;"
+              <img style="height: 128px;"
                 src="https://www.telegraph.co.uk/content/dam/science/2018/12/06/The-AlphaZero-team-at-work_trans_NvBQzQNjv4BqzyN9BNfgYa9w_bm-WzgI4xzQs3t1VN0X7FXw_AXaq80.jpg"/>
             </div>
+          <p style="font-size: initial;">Although this presentation focuses on AlphaZero, while implementing the algorithm, I followed the AlphaGo Zero paper instead.<br/>However, this is perfectly fine as the two algorithms are essentially identical.</p>
           </textarea>
         </section>
         <section data-markdown style="text-align: left;">
@@ -124,7 +130,7 @@
         <section data-markdown style="text-align: left;">
           <textarea data-template>
             ## 1. Overview
-            ### 1.4. Components
+            ### 1.4. AlphaZero Algorithm's Components
             <object data="slides/en/overview-components.drawio.svg" type="image/svg+xml" style="width: 100%;"></object>
           </textarea>
         </section>
@@ -140,8 +146,31 @@
         <section data-markdown style="text-align: left;">
           <textarea data-template>
             ## 2. MCTS (Monte Carlo Tree Search)
-            ### 2.1. Key Features
-            - Requirements: A "model" (e.g., a neural network) that:
+            ### 2.1. Quick Introduction
+            #### Monte Carlo methods
+            <div style="display: grid; grid-template-columns: 60% 40%;">
+              <div>A broad class of computational algorithms based on repeated random sampling for obtaining numerical results.</div>
+              <div>
+                <img style="height: 128px;" src="https://upload.wikimedia.org/wikipedia/commons/f/ff/Approximation_d%27une_distribution_normale.gif"/>
+                <img style="height: 128px;" src="https://upload.wikimedia.org/wikipedia/commons/d/d4/Pi_monte_carlo_all.gif"/>
+                </div>
+            </div>
+
+            #### Search Algorithms in Board Games
+            - Minimax
+            - Alpha-Beta Pruning
+            - MCTS (Monte Carlo Tree Search)
+            - ...
+            <br/><br/>
+
+            <span class="color-cyan"><em>AlphaZero uses a variant of MCTS algorithm, combining it with deep neural networks to guide the search process more efficiently and accurately</em></span>.
+          </textarea>
+        </section>
+        <section data-markdown style="text-align: left;">
+          <textarea data-template>
+            ## 2. MCTS (Monte Carlo Tree Search)
+            ### 2.2. Key Features
+            - Requirements: A "model" (e.g., neural network) for "prior estimation":
               - Takes a game <span class="color-cyan"><em>state</em></span> as input data.
               - Predicts output data including <span class="color-cyan"><em>prior probabilities (policy)</em></span> and a <span class="color-cyan"><em>state value</em></span>.
             - Results: Improved <span class="color-cyan"><em>search probabilities</em></span>.
@@ -152,23 +181,22 @@
         <section data-markdown style="text-align: left;">
           <textarea data-template>
             ## 2. MCTS (Monte Carlo Tree Search)
-            ### 2.2. Algorithm (1/2)
+            ### 2.3. Algorithm (1/2)
             #### Overview
-            - Construct a search tree:
-              - Each node represents a state.
-              - Each edge represents a legal move connecting a parent node to one of its child nodes.
-            - During tree traversal from the initial state to a terminal state:
-              - At <span class="color-cyan"><em>each move</em></span>, execute <span class="color-cyan"><em>multiple MCTS simulations</em></span> from the current root node.
-                - <span class="color-cyan"><em>Each simulation</em></span> includes two main phases: <span class="color-cyan"><em>selection</em></span> and <span class="color-cyan"><em>backup</em></span>.
-              - After the MCTS simulations finish, the next actual move is chosen by <span class="color-cyan"><em>sampling from the search probabilities</em></span> (calculated from <span class="color-cyan"><em>visit counts</em></span>), and the next node becomes the new root node.
+            <p style="font-size: initial;">For simplicity, we only show a small portion of the full search tree.</p>
+            <p>
+              <object data="slides/en/mcts-overview.drawio.svg" type="image/svg+xml" style="width: 100%;"></object>
+            </p>
+            <p style="font-size: initial;">Please refer to the Appendix for further details.</p>
           </textarea>
         </section>
         <section data-markdown style="text-align: left;">
           <textarea data-template>
             ## 2. MCTS (Monte Carlo Tree Search)
-            ### 2.2. Algorithm (2/2)
+            ### 2.3. Algorithm (2/2)
+            #### One simulation
             <p style="font-size: initial;" class="color-yellow">IMPORTANT</p>
-            <p style="font-size: initial;"><span class="color-cyan"><em>Selecting an action during one MCTS simulation</em></span> relies on <span class="color-cyan"><em>PUCT scores</em></span> (as shown in this slide),</p>
+            <p style="font-size: initial;"><span class="color-cyan"><em>Selecting an action during one MCTS simulation</em></span> (as shown in this slide) relies on <span class="color-cyan"><em>PUCT scores</em></span>,</p>
             <p style="font-size: initial;">whereas <span class="color-cyan"><em>choosing the next actual move</em></span> involves sampling from <span class="color-cyan"><em>the search probabilities</em></span> accumulated across <span class="color-cyan"><em>multiple MCTS simulations</em></span>.</p>
             <p>
               <object data="slides/en/mcts-one_simulation.drawio.svg" type="image/svg+xml" style="width: 100%;"></object>
@@ -179,7 +207,7 @@
         <section data-markdown style="text-align: left;">
           <textarea data-template>
             ## 2. MCTS (Monte Carlo Tree Search)
-            ### 2.3. Example: Tic-tac-toe Game (1/2)
+            ### 2.4. Example: Tic-tac-toe Game (1/2)
             #### MCTS Simulations
             <p style="font-size: initial;">For simplicity, we use a dummy model that assigns <span class="color-cyan"><em>uniform prior probabilities</em></span> to all actions and <span class="color-cyan"><em>zero values</em></span> to all states (excluding terminal ones).</p>
             <p style="font-size: initial;">Despite these imperfect predictions, the MCTS algorithm finds optimal solutions: Over more iterations, <span class="color-cyan"><em>nodes leading to victory are visited with increasing frequency</em></span>.</p>
@@ -191,7 +219,7 @@
         <section data-markdown style="text-align: left;">
           <textarea data-template>
             ## 2. MCTS (Monte Carlo Tree Search)
-            ### 2.3. Example: Tic-tac-toe Game (2/2)
+            ### 2.4. Example: Tic-tac-toe Game (2/2)
             #### Choosing Next Move
             <p style="font-size: initial;">After executing <span class="color-cyan"><em>multiple MCTS simulations</em></span>, <span class="color-cyan"><em>visit counts</em></span> are used to calculate <span class="color-cyan"><em>the search probabilities</em></span>, which are stronger than <span class="color-cyan"><em>the prior probabilities</em></span> (predicted by the model) in terms of choosing a good next move.</p>
             <p style="font-size: initial;">The tree search plays the role of both players: at each node, it <span class="color-cyan"><em>changes perspective</em></span> to seek the best strategy for the current player.</p>
@@ -204,7 +232,22 @@
         <section data-markdown style="text-align: left;">
           <textarea data-template>
             ## 2. MCTS (Monte Carlo Tree Search)
-            ### 2.4. Connection with Model Training
+            ### 2.5. Critical Points (1/2)
+            <span class="color-cyan"><em>How does the model's performance affect the algorithm's results</em></span>? What if the model is very immature (e.g., assigns high probabilities to low-value actions) and prevents the search from finding good moves?<br/>
+            <br/>
+            In practice, this is not a major issue because:
+            - PUCT scores (used to select nodes during each simulation) increasingly <span class="color-cyan"><em>favor high-value nodes as simulations grow</em></span>.
+            - The algorithm does not rely solely on the model's "prior estimation", it also <span class="color-cyan"><em>uses actual rewards from terminal nodes</em></span>.
+            <br/><br/>
+
+            That means, <span class="color-cyan"><em>given enough simulations, MCTS can still find strong moves</em></span>, regardless of the model's quality.
+            <p style="font-size: initial;">Please refer to the Appendix for further details.</p>
+          </textarea>
+        </section>
+        <section data-markdown style="text-align: left;">
+          <textarea data-template>
+            ## 2. MCTS (Monte Carlo Tree Search)
+            ### 2.5. Critical Points (2/2)
             MCTS simulations are capable of choosing a good move despite imperfect predictions from the model for a given state.<br/>
             So, <span class="color-cyan"><em>why do we need to train a model</em></span>? Are MCTS simulations not enough?<br/>
             <br/>
@@ -357,22 +400,15 @@
         <section data-markdown style="text-align: left;">
           <textarea data-template>
             ## 6. Summary
-            ### 6.2. Keywords
-            - *Monte Carlo Tree Search*
-            - *AlphaGo*, *AlphaZero*
-            - Other references:
-              - [*MuZero*](https://deepmind.google/blog/muzero-mastering-go-chess-shogi-and-atari-without-rules/)
-              - [*AlphaStar*](https://deepmind.google/blog/alphastar-mastering-the-real-time-strategy-game-starcraft-ii/)
-              - [*NNUE* (Stockfish)](https://official-stockfish.github.io/docs/nnue-pytorch-wiki/docs/nnue.html)
-          </textarea>
-        </section>
-        <section data-markdown style="text-align: left;">
-          <textarea data-template>
-            ## 6. Summary
-            ### 6.3. Further Reading
-            - AlphaGo's paper: [Mastering the game of Go with deep neural networks and tree search](https://www.semanticscholar.org/paper/Mastering-the-game-of-Go-with-deep-neural-networks-Silver-Huang/846aedd869a00c09b40f1f1f35673cb22bc87490)
-            - AlphaGo Zero's paper (main paper of this project): [Mastering the game of Go without human knowledge](https://www.semanticscholar.org/paper/Mastering-the-game-of-Go-without-human-knowledge-Silver-Schrittwieser/c27db32efa8137cbf654902f8f728f338e55cd1c)
-            - AlphaZero's paper: [A general reinforcement learning algorithm that masters chess, shogi, and Go through self-play](https://www.semanticscholar.org/paper/A-general-reinforcement-learning-algorithm-that-and-Silver-Hubert/f9717d29840f4d8f1cc19d1b1e80c5d12ec40608) ([Supplementary Material](https://www.science.org/doi/10.1126/science.aar6404))
+            ### 6.2. Further Reading
+            - [AlphaGo paper](https://www.semanticscholar.org/paper/Mastering-the-game-of-Go-with-deep-neural-networks-Silver-Huang/846aedd869a00c09b40f1f1f35673cb22bc87490)
+            - [AlphaGo Zero paper](https://www.semanticscholar.org/paper/Mastering-the-game-of-Go-without-human-knowledge-Silver-Schrittwieser/c27db32efa8137cbf654902f8f728f338e55cd1c)
+            - [AlphaZero paper](https://www.semanticscholar.org/paper/A-general-reinforcement-learning-algorithm-that-and-Silver-Hubert/f9717d29840f4d8f1cc19d1b1e80c5d12ec40608) and its [supplementary material](https://www.science.org/doi/10.1126/science.aar6404)
+            - [MuZero blog](https://deepmind.google/blog/muzero-mastering-go-chess-shogi-and-atari-without-rules/)
+            - [AlphaDev blog](https://deepmind.google/blog/alphadev-discovers-faster-sorting-algorithms/)
+            - [MuZero, AlphaZero, and AlphaDev blog](https://deepmind.google/blog/muzero-alphazero-and-alphadev-optimizing-computer-systems/)
+            - [AlphaChip blog](https://deepmind.google/blog/how-alphachip-transformed-computer-chip-design/)
+            - [AlphaProof blog](https://deepmind.google/blog/ai-solves-imo-problems-at-silver-medal-level/)
           </textarea>
         </section>
       </section>
